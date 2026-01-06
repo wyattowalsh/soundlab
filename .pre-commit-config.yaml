@@ -1,0 +1,132 @@
+# Pre-commit configuration for SoundLab
+# See https://pre-commit.com for more information
+
+# Exclude common generated files, caches, and virtual environments
+exclude: |
+  (?x)^(
+      \.venv/.*|
+      \.git/.*|
+      \.pytest_cache/.*|
+      \.mypy_cache/.*|
+      \.ruff_cache/.*|
+      __pycache__/.*|
+      \.coverage.*|
+      htmlcov/.*|
+      \.DS_Store|
+      \.ipynb_checkpoints/.*|
+      build/.*|
+      dist/.*|
+      .*\.egg-info/.*|
+      packages/.*/build/.*|
+      packages/.*/dist/.*
+  )$
+
+repos:
+  # Standard pre-commit hooks for basic file hygiene
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      # Remove trailing whitespace
+      - id: trailing-whitespace
+        args: [--markdown-linebreak-ext=md]
+        exclude_types: [jupyter]
+
+      # Ensure files end with a newline
+      - id: end-of-file-fixer
+        exclude_types: [jupyter]
+
+      # Validate YAML files
+      - id: check-yaml
+        args: [--safe]
+
+      # Prevent large files from being committed
+      - id: check-added-large-files
+        args: [--maxkb=5000]  # 5MB limit
+
+      # Check for merge conflict markers
+      - id: check-merge-conflict
+
+      # Check for files that would conflict in case-insensitive filesystems
+      - id: check-case-conflict
+
+      # Ensure Python files are valid syntax
+      - id: check-ast
+
+      # Check for debugger imports
+      - id: debug-statements
+
+      # Check TOML file syntax
+      - id: check-toml
+
+      # Check JSON file syntax
+      - id: check-json
+
+      # Detect private keys
+      - id: detect-private-key
+
+      # Fix mixed line endings
+      - id: mixed-line-ending
+        args: [--fix=lf]
+
+  # Ruff - An extremely fast Python linter and formatter
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.8.4
+    hooks:
+      # Run the linter
+      - id: ruff
+        name: ruff lint
+        args:
+          - --fix
+          - --exit-non-zero-on-fix
+        types_or: [python, pyi]
+
+      # Run the formatter
+      - id: ruff-format
+        name: ruff format
+        types_or: [python, pyi]
+
+  # MyPy - Static type checker for Python
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.13.0
+    hooks:
+      - id: mypy
+        name: mypy type check
+        # Only check the soundlab package source code
+        files: ^packages/soundlab/src/
+        # Pass configuration via command line
+        args:
+          - --config-file=pyproject.toml
+          - --python-version=3.12
+          - --strict
+          - --warn-unreachable
+          - --warn-redundant-casts
+          - --warn-unused-ignores
+          - --show-error-codes
+          - --no-implicit-reexport
+          - --disallow-untyped-defs
+          - --disallow-incomplete-defs
+        # Install type stubs for dependencies
+        additional_dependencies:
+          - types-requests
+          - types-PyYAML
+          - types-setuptools
+          - numpy
+          - torch
+          - torchaudio
+
+# Global configuration
+default_language_version:
+  python: python3.12
+
+# CI settings
+ci:
+  autofix_commit_msg: |
+    [pre-commit.ci] auto fixes from pre-commit hooks
+
+    for more information, see https://pre-commit.ci
+  autofix_prs: true
+  autoupdate_branch: ''
+  autoupdate_commit_msg: '[pre-commit.ci] pre-commit autoupdate'
+  autoupdate_schedule: weekly
+  skip: []
+  submodules: false

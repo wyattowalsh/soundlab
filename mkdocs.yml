@@ -1,0 +1,293 @@
+# MkDocs Configuration for SoundLab
+# Production-ready music processing platform documentation
+
+# Site metadata
+site_name: SoundLab
+site_description: Production-ready music processing platform
+site_url: https://wyattowalsh.github.io/soundlab
+site_author: Wyatt Walsh
+
+# Repository information
+repo_name: wyattowalsh/soundlab
+repo_url: https://github.com/wyattowalsh/soundlab
+edit_uri: edit/main/docs/
+
+# Copyright
+copyright: Copyright &copy; 2026 Wyatt Walsh
+
+# Configuration
+docs_dir: docs
+site_dir: site
+
+# Theme configuration
+theme:
+  name: material
+  language: en
+
+  # Color palette with dark/light mode toggle
+  palette:
+    # Light mode
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: deep purple
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+
+    # Dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: deep purple
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+
+  # Font configuration
+  font:
+    text: Roboto
+    code: Roboto Mono
+
+  # Logo and favicon
+  icon:
+    repo: fontawesome/brands/github
+
+  # Material features
+  features:
+    # Navigation
+    - navigation.tabs              # Top-level sections in tabs
+    - navigation.tabs.sticky       # Sticky navigation tabs
+    - navigation.sections          # Section index pages
+    - navigation.expand            # Expand sections by default
+    - navigation.path              # Breadcrumbs
+    - navigation.indexes           # Section index pages
+    - navigation.top               # Back to top button
+    - navigation.footer            # Previous/next footer
+
+    # Search
+    - search.suggest               # Search suggestions
+    - search.highlight             # Highlight search terms
+    - search.share                 # Share search results
+
+    # Table of contents
+    - toc.follow                   # TOC follows scroll
+    - toc.integrate                # Integrate TOC into navigation
+
+    # Code blocks
+    - content.code.copy            # Copy button for code blocks
+    - content.code.annotate        # Code annotations
+
+    # Content
+    - content.tabs.link            # Link content tabs
+    - content.tooltips             # Improved tooltips
+
+# Plugins
+plugins:
+  # Search plugin
+  - search:
+      separator: '[\s\-,:!=\[\]()"`/]+|\.(?!\d)|&[lg]t;|(?!\b)(?=[A-Z][a-z])'
+      lang: en
+
+  # Auto-reference plugin for cross-references
+  - autorefs
+
+  # API documentation from docstrings
+  - mkdocstrings:
+      enabled: true
+      default_handler: python
+      handlers:
+        python:
+          options:
+            # Docstring style
+            docstring_style: google
+            docstring_section_style: table
+
+            # Rendering options
+            show_root_heading: true
+            show_root_full_path: false
+            show_object_full_path: false
+            show_category_heading: true
+            show_if_no_docstring: false
+            show_signature: true
+            show_signature_annotations: true
+            separate_signature: true
+            line_length: 80
+
+            # Member options
+            members_order: source
+            show_source: true
+            show_bases: true
+            show_submodules: false
+
+            # Additional options
+            heading_level: 2
+            merge_init_into_class: true
+            filters:
+              - "!^_"  # Exclude private members
+
+            # Signature options
+            signature_crossrefs: true
+
+  # Git information
+  - git-revision-date-localized:
+      enable_creation_date: true
+      type: timeago
+
+  # Minify HTML in production
+  - minify:
+      minify_html: true
+      minify_js: true
+      minify_css: true
+      htmlmin_opts:
+        remove_comments: true
+
+# Navigation structure
+nav:
+  - Home: index.md
+
+  - Getting Started:
+    - getting-started/index.md
+    - Installation: getting-started/installation.md
+    - Quick Start: getting-started/quickstart.md
+
+  - User Guide:
+    - user-guide/index.md
+    - Source Separation: user-guide/separation.md
+    - Audio Transcription: user-guide/transcription.md
+    - Music Analysis: user-guide/analysis.md
+    - Audio Effects: user-guide/effects.md
+    - Voice Processing: user-guide/voice.md
+
+  - API Reference:
+    - api/index.md
+    - Core:
+      - SoundLab: api/core/soundlab.md
+      - Audio: api/core/audio.md
+      - Config: api/core/config.md
+    - Separation:
+      - Separator: api/separation/separator.md
+      - Models: api/separation/models.md
+    - Transcription:
+      - Transcriber: api/transcription/transcriber.md
+      - Formats: api/transcription/formats.md
+    - Analysis:
+      - Analyzer: api/analysis/analyzer.md
+      - Features: api/analysis/features.md
+    - Effects:
+      - Processor: api/effects/processor.md
+      - Effects List: api/effects/effects.md
+    - Voice:
+      - Voice Changer: api/voice/voice.md
+      - Models: api/voice/models.md
+    - Utils:
+      - Helpers: api/utils/helpers.md
+      - Validators: api/utils/validators.md
+
+  - Examples:
+    - examples/index.md
+    - Basic Usage: examples/basic.md
+    - Advanced Workflows: examples/advanced.md
+    - Integration Examples: examples/integration.md
+    - CLI Usage: examples/cli.md
+
+  - Contributing:
+    - contributing/index.md
+    - Development Setup: contributing/development.md
+    - Code Style: contributing/code-style.md
+    - Testing: contributing/testing.md
+    - Documentation: contributing/documentation.md
+    - Pull Requests: contributing/pull-requests.md
+
+  - Changelog: changelog.md
+
+# Markdown extensions
+markdown_extensions:
+  # Python Markdown extensions
+  - abbr                          # Abbreviations
+  - admonition                    # Admonitions (notes, warnings, etc.)
+  - attr_list                     # Attribute lists
+  - def_list                      # Definition lists
+  - footnotes                     # Footnotes
+  - md_in_html                    # Markdown in HTML
+  - tables                        # Tables
+  - toc:
+      permalink: true             # Permalink anchors
+      permalink_title: Anchor link to this section
+      toc_depth: 3
+
+  # PyMdown Extensions
+  - pymdownx.arithmatex:          # Math notation
+      generic: true
+  - pymdownx.betterem:            # Better emphasis
+      smart_enable: all
+  - pymdownx.caret                # Superscript
+  - pymdownx.mark                 # Mark/highlight text
+  - pymdownx.tilde                # Subscript and strikethrough
+  - pymdownx.critic               # Critic markup
+  - pymdownx.details              # Collapsible details
+  - pymdownx.emoji:               # Emoji support
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - pymdownx.highlight:           # Code highlighting
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+      auto_title: true
+      linenums: true
+  - pymdownx.inlinehilite         # Inline code highlighting
+  - pymdownx.keys                 # Keyboard keys
+  - pymdownx.magiclink:           # Auto-link URLs
+      repo_url_shorthand: true
+      user: wyattowalsh
+      repo: soundlab
+  - pymdownx.smartsymbols         # Smart symbols
+  - pymdownx.snippets:            # Include file snippets
+      check_paths: true
+  - pymdownx.superfences:         # Nested code blocks
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:              # Content tabs
+      alternate_style: true
+  - pymdownx.tasklist:            # Task lists
+      custom_checkbox: true
+      clickable_checkbox: false
+
+# Extra configuration
+extra:
+  # Social links
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/wyattowalsh/soundlab
+      name: GitHub Repository
+    - icon: fontawesome/brands/python
+      link: https://pypi.org/project/soundlab/
+      name: PyPI Package
+
+  # Analytics (uncomment and add your ID when ready)
+  # analytics:
+  #   provider: google
+  #   property: G-XXXXXXXXXX
+
+  # Version selector (for multi-version docs)
+  version:
+    provider: mike
+    default: latest
+
+  # Generator notice
+  generator: true
+
+# Extra CSS and JavaScript
+extra_css:
+  - stylesheets/extra.css
+
+extra_javascript:
+  # MathJax for mathematical notation
+  - javascripts/mathjax.js
+  - https://polyfill.io/v3/polyfill.min.js?features=es6
+  - https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js
+
+# Validation
+strict: true
