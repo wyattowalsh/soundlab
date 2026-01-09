@@ -24,9 +24,13 @@ def separate(
     ] = DemucsModel.HTDEMUCS_FT,
     device: Annotated[str, typer.Option(help="Device selection (auto/cpu/cuda).")] = "auto",
     split: Annotated[bool, typer.Option(help="Enable chunked separation.")] = True,
+    vocals_only: Annotated[
+        bool, typer.Option("--vocals-only", help="Isolate vocals only (outputs vocals + instrumental stems).")
+    ] = False,
 ) -> None:
     """Separate a mix into stems."""
-    config = SeparationConfig(model=model, device=device, split=split)
+    two_stems = "vocals" if vocals_only else None
+    config = SeparationConfig(model=model, device=device, split=split, two_stems=two_stems)
     separator = StemSeparator(config)
     result = separator.separate(audio_path, output_dir)
     typer.echo(result.model_dump_json(indent=2))

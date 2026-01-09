@@ -22,7 +22,9 @@
 | Feature | Description |
 |---------|-------------|
 | 🎚️ **Stem Separation** | Demucs HTDemucs/HTDemucs-FT models for vocals, drums, bass, other |
+| 🎤 **Vocal Isolation** | Extract vocals or instrumentals with two-stem separation mode |
 | 🎹 **Audio-to-MIDI** | Basic Pitch transcription with configurable thresholds |
+| 🥁 **Drum-to-MIDI** | Transcribe drum patterns to MIDI with kick, snare, hihat detection |
 | 🎨 **Effects Processing** | Pedalboard-based EQ, compression, reverb, and creative effects |
 | 📊 **Audio Analysis** | Tempo, key, loudness (LUFS), spectral features |
 | 🗣️ **Voice Generation** | XTTS-v2 TTS and RVC voice conversion (optional) |
@@ -62,6 +64,8 @@ pip install -e ".[voice,notebook]"
 > [!NOTE]
 > Requires Python 3.12+. GPU recommended for stem separation.
 
+> **Note**: Google Colab runs Python 3.10, which is fully supported. Python 3.13+ deprecates the `audioop` module used by pydub. For local Python 3.13+ usage, install `audioop-lts` as a workaround, or use wav/flac formats with soundfile which doesn't require audioop.
+
 ---
 
 ## 🚀 Quick Start
@@ -82,6 +86,18 @@ print(f"Drums: {result.stems['drums']}")
 print(f"Processing time: {result.processing_time_seconds:.1f}s")
 ```
 
+### Vocal Isolation
+
+```python
+# Isolate vocals
+from soundlab.separation import StemSeparator, SeparationConfig
+
+config = SeparationConfig(two_stems="vocals")
+separator = StemSeparator(config)
+result = separator.separate("song.mp3", "output/")
+# result.vocals, result.instrumental
+```
+
 ### Audio-to-MIDI Transcription
 
 ```python
@@ -93,6 +109,17 @@ result = transcriber.transcribe("piano.wav", output_dir="midi/")
 
 for note in result.notes[:5]:
     print(f"Pitch: {note.pitch}, Start: {note.start:.2f}s")
+```
+
+### Drum-to-MIDI Transcription
+
+```python
+# Transcribe drums to MIDI
+from soundlab.transcription import DrumTranscriber
+
+transcriber = DrumTranscriber()
+result = transcriber.transcribe("drums.wav", "output/")
+# Creates MIDI file with kick, snare, hihat events
 ```
 
 ### Audio Analysis

@@ -35,6 +35,32 @@ pip install -e ".[voice,notebook]"
 
 ---
 
+## Python Version Compatibility
+
+| Version | Status | Notes |
+|---------|--------|-------|
+| Python 3.10-3.11 | ✅ Full Support | Google Colab default |
+| Python 3.12 | ✅ Full Support | Recommended for local development |
+| Python 3.13+ | ⚠️ Limited | `audioop` deprecated; pydub MP3 support requires `audioop-lts` |
+
+### Python 3.13+ Workaround
+
+If using Python 3.13+, install the audioop compatibility package:
+
+```bash
+pip install audioop-lts
+```
+
+Alternatively, use WAV or FLAC formats which don't require audioop:
+
+```python
+from soundlab import save_audio, AudioFormat
+
+save_audio(segment, "output.flac", format=AudioFormat.FLAC)
+```
+
+---
+
 ## Basic Usage
 
 ### Load Audio
@@ -80,6 +106,27 @@ print(f"Other: {result.stems['other']}")
 print(f"Processing time: {result.processing_time_seconds:.1f}s")
 ```
 
+### Vocal Isolation
+
+Isolate vocals from any song with a single command:
+
+#### CLI
+```bash
+soundlab separate input.mp3 output/ --vocals-only
+```
+
+#### Python
+```python
+from soundlab.separation import StemSeparator, SeparationConfig
+
+config = SeparationConfig(two_stems="vocals")
+separator = StemSeparator(config)
+result = separator.separate("song.mp3", "output/")
+
+print(result.vocals)  # Path to isolated vocals
+print(result.instrumental)  # Path to instrumental (computed on-demand)
+```
+
 **Available Models:**
 
 | Model | Stems | Quality | Speed |
@@ -114,6 +161,31 @@ for note in result.notes[:10]:
 
 # Save MIDI file
 print(f"MIDI saved to: {result.path}")
+```
+
+### Drum-to-MIDI Transcription
+
+Convert drum tracks to MIDI for re-programming or analysis:
+
+#### Step 1: Separate Drums
+```python
+from soundlab.separation import StemSeparator
+
+separator = StemSeparator()
+result = separator.separate("song.mp3", "stems/")
+drum_path = result.stems["drums"]
+```
+
+#### Step 2: Transcribe to MIDI
+```python
+from soundlab.transcription import DrumTranscriber, DrumTranscriptionConfig
+
+config = DrumTranscriptionConfig(onset_threshold=0.3)
+transcriber = DrumTranscriber(config)
+midi_result = transcriber.transcribe(drum_path, "output/")
+
+print(midi_result.path)  # drums.mid
+print(len(midi_result.notes))  # Number of detected hits
 ```
 
 ### Audio Analysis

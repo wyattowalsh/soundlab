@@ -418,6 +418,266 @@ class TestGetAudioMetadata:
 
 
 # --------------------------------------------------------------------------- #
+# _decode_with_pydub Tests
+# --------------------------------------------------------------------------- #
+
+
+class TestDecodeWithPydub:
+    """Tests for _decode_with_pydub fallback function."""
+
+    def test_mono_audio_shape(self, tmp_path: Path) -> None:
+        """Mono audio returns correct shape."""
+        mp3_path = tmp_path / "test.mp3"
+
+        # Mock pydub audio - mono, 1000 samples
+        mock_pydub = MagicMock()
+        mock_pydub.get_array_of_samples.return_value = np.arange(1000, dtype=np.int16)
+        mock_pydub.channels = 1
+        mock_pydub.frame_rate = 22050
+        mock_pydub.sample_width = 2
+        mock_pydub.__len__ = MagicMock(return_value=1000)
+
+        with patch("soundlab.io.audio_io.PydubAudioSegment.from_file", return_value=mock_pydub):
+            from soundlab.io.audio_io import _decode_with_pydub
+
+            samples, _sr, metadata = _decode_with_pydub(mp3_path)
+
+        assert samples.ndim == 1
+        assert samples.shape == (1000,)
+        assert metadata.channels == 1
+
+    def test_stereo_audio_reshaped(self, tmp_path: Path) -> None:
+        """Stereo audio reshaped to (2, samples) from interleaved [L0,R0,L1,R1,...]."""
+        mp3_path = tmp_path / "test.mp3"
+
+        # Mock pydub audio - stereo, interleaved: [L0, R0, L1, R1, ...]
+        # 4 frames * 2 channels = 8 samples interleaved
+        interleaved = np.array([1, 2, 3, 4, 5, 6, 7, 8], dtype=np.int16)
+        mock_pydub = MagicMock()
+        mock_pydub.get_array_of_samples.return_value = interleaved
+        mock_pydub.channels = 2
+        mock_pydub.frame_rate = 22050
+        mock_pydub.sample_width = 2
+        mock_pydub.__len__ = MagicMock(return_value=1000)
+
+        with patch("soundlab.io.audio_io.PydubAudioSegment.from_file", return_value=mock_pydub):
+            from soundlab.io.audio_io import _decode_with_pydub
+
+            samples, _sr, metadata = _decode_with_pydub(mp3_path)
+
+        assert samples.ndim == 2
+        assert samples.shape == (2, 4)  # 2 channels, 4 frames
+        assert metadata.channels == 2
+
+    def test_sample_width_16bit(self, tmp_path: Path) -> None:
+        """16-bit audio (sample_width=2) decoded correctly."""
+        mp3_path = tmp_path / "test.mp3"
+
+        # 16-bit audio: max value is 32768
+        raw_samples = np.array([16384, -16384], dtype=np.int16)  # Half max
+        mock_pydub = MagicMock()
+        mock_pydub.get_array_of_samples.return_value = raw_samples
+        mock_pydub.channels = 1
+        mock_pydub.frame_rate = 44100
+        mock_pydub.sample_width = 2
+        mock_pydub.__len__ = MagicMock(return_value=100)
+
+        with patch("soundlab.io.audio_io.PydubAudioSegment.from_file", return_value=mock_pydub):
+            from soundlab.io.audio_io import _decode_with_pydub
+
+            samples, _sr, metadata = _decode_with_pydub(mp3_path)
+
+        # 16384 / 32768 = 0.5
+        np.testing.assert_allclose(samples[0], 0.5, rtol=1e-4)
+        np.testing.assert_allclose(samples[1], -0.5, rtol=1e-4)
+        assert metadata.bit_depth == BitDepth.INT16
+
+    def test_sample_width_24bit(self, tmp_path: Path) -> None:
+        """24-bit audio (sample_width=3) decoded correctly via stereo path."""
+        mp3_path = tmp_path / "test.mp3"
+
+        # 24-bit audio: max value is 8388608 (2^23)
+        # Use stereo to avoid the mono int16 cast path
+        # Interleaved: [L0, R0] with 24-bit values
+        raw_samples = np.array([4194304, -4194304], dtype=np.int32)
+        mock_pydub = MagicMock()
+        mock_pydub.get_array_of_samples.return_value = raw_samples
+        mock_pydub.channels = 2  # Stereo to use reshape path
+        mock_pydub.frame_rate = 44100
+        mock_pydub.sample_width = 3
+        mock_pydub.__len__ = MagicMock(return_value=100)
+
+        with patch("soundlab.io.audio_io.PydubAudioSegment.from_file", return_value=mock_pydub):
+            from soundlab.io.audio_io import _decode_with_pydub
+
+            samples, _sr, metadata = _decode_with_pydub(mp3_path)
+
+        # 4194304 / 8388608 = 0.5 for left channel
+        # -4194304 / 8388608 = -0.5 for right channel
+        assert samples.shape == (2, 1)  # 2 channels, 1 frame
+        np.testing.assert_allclose(samples[0, 0], 0.5, rtol=1e-4)
+        np.testing.assert_allclose(samples[1, 0], -0.5, rtol=1e-4)
+        assert metadata.bit_depth == BitDepth.INT24
+
+    def test_sample_rate_preserved(self, tmp_path: Path) -> None:
+        """Sample rate from pydub preserved in output."""
+        mp3_path = tmp_path / "test.mp3"
+
+        mock_pydub = MagicMock()
+        mock_pydub.get_array_of_samples.return_value = np.zeros(1000, dtype=np.int16)
+        mock_pydub.channels = 1
+        mock_pydub.frame_rate = 48000  # Non-standard sample rate
+        mock_pydub.sample_width = 2
+        mock_pydub.__len__ = MagicMock(return_value=1000)
+
+        with patch("soundlab.io.audio_io.PydubAudioSegment.from_file", return_value=mock_pydub):
+            from soundlab.io.audio_io import _decode_with_pydub
+
+            _samples, sr, metadata = _decode_with_pydub(mp3_path)
+
+        assert sr == 48000
+        assert metadata.sample_rate == 48000
+
+
+# --------------------------------------------------------------------------- #
+# save_audio Pydub Fallback Tests
+# --------------------------------------------------------------------------- #
+
+
+class TestSaveAudioPydubFallback:
+    """Tests for save_audio pydub fallback path."""
+
+    def test_mono_samples_expanded(self, tmp_path: Path) -> None:
+        """Mono samples expanded for pydub export."""
+        mp3_path = tmp_path / "output.mp3"
+
+        # Create mono segment
+        mono_samples = np.random.rand(1000).astype(np.float32) * 0.5
+        segment = AudioSegment(samples=mono_samples, sample_rate=22050)
+
+        mock_pydub_segment = MagicMock()
+
+        with (
+            patch("soundlab.io.audio_io.sf.write", side_effect=Exception("soundfile error")),
+            patch(
+                "soundlab.io.audio_io.PydubAudioSegment", return_value=mock_pydub_segment
+            ) as mock_pydub_cls,
+        ):
+            save_audio(segment, mp3_path)
+
+        # Verify pydub was called with correct channel count
+        call_kwargs = mock_pydub_cls.call_args[1]
+        assert call_kwargs["channels"] == 1
+        mock_pydub_segment.export.assert_called_once()
+
+    def test_clipping_handled(self, tmp_path: Path) -> None:
+        """Samples clipped to [-1, 1] range."""
+        mp3_path = tmp_path / "output.mp3"
+
+        # Create segment with out-of-range values
+        samples = np.array([2.0, -2.0, 0.5, -0.5], dtype=np.float32)
+        segment = AudioSegment(samples=samples, sample_rate=22050)
+
+        mock_pydub_segment = MagicMock()
+        captured_data = None
+
+        def capture_pydub(*_args, **kwargs):
+            nonlocal captured_data
+            captured_data = kwargs.get("data")
+            return mock_pydub_segment
+
+        with (
+            patch("soundlab.io.audio_io.sf.write", side_effect=Exception("soundfile error")),
+            patch("soundlab.io.audio_io.PydubAudioSegment", side_effect=capture_pydub),
+        ):
+            save_audio(segment, mp3_path)
+
+        # Decode the captured int16 data
+        int_samples = np.frombuffer(captured_data, dtype=np.int16)
+
+        # Values should be clipped: 2.0 -> 32767, -2.0 -> -32767
+        assert int_samples[0] == 32767  # Clipped from 2.0
+        assert int_samples[1] == -32767  # Clipped from -2.0
+        # 0.5 * 32767 ≈ 16383
+        assert abs(int_samples[2] - 16383) <= 1
+        assert abs(int_samples[3] - (-16383)) <= 1
+
+    def test_interleaving_for_stereo(self, tmp_path: Path) -> None:
+        """Stereo samples interleaved correctly."""
+        mp3_path = tmp_path / "output.mp3"
+
+        # Create stereo segment: (2, 4) shape
+        # Left channel: [0.25, 0.5, 0.75, 1.0]
+        # Right channel: [-0.25, -0.5, -0.75, -1.0]
+        left = np.array([0.25, 0.5, 0.75, 1.0], dtype=np.float32)
+        right = np.array([-0.25, -0.5, -0.75, -1.0], dtype=np.float32)
+        stereo_samples = np.stack([left, right])
+        segment = AudioSegment(samples=stereo_samples, sample_rate=22050)
+
+        mock_pydub_segment = MagicMock()
+        captured_data = None
+
+        def capture_pydub(*_args, **kwargs):
+            nonlocal captured_data
+            captured_data = kwargs.get("data")
+            return mock_pydub_segment
+
+        with (
+            patch("soundlab.io.audio_io.sf.write", side_effect=Exception("soundfile error")),
+            patch("soundlab.io.audio_io.PydubAudioSegment", side_effect=capture_pydub),
+        ):
+            save_audio(segment, mp3_path)
+
+        # Decode the captured int16 data
+        int_samples = np.frombuffer(captured_data, dtype=np.int16)
+
+        # Should be interleaved: [L0, R0, L1, R1, L2, R2, L3, R3]
+        assert len(int_samples) == 8
+
+        # Check interleaving pattern (L, R, L, R, ...)
+        # L0 ≈ 0.25 * 32767 ≈ 8191
+        assert abs(int_samples[0] - int(0.25 * 32767)) <= 1
+        # R0 ≈ -0.25 * 32767 ≈ -8191
+        assert abs(int_samples[1] - int(-0.25 * 32767)) <= 1
+
+    def test_format_from_extension(self, tmp_path: Path) -> None:
+        """Format inferred from file extension."""
+        flac_path = tmp_path / "output.flac"
+
+        samples = np.zeros(1000, dtype=np.float32)
+        segment = AudioSegment(samples=samples, sample_rate=22050)
+
+        mock_pydub_segment = MagicMock()
+
+        with (
+            patch("soundlab.io.audio_io.sf.write", side_effect=Exception("soundfile error")),
+            patch("soundlab.io.audio_io.PydubAudioSegment", return_value=mock_pydub_segment),
+        ):
+            save_audio(segment, flac_path)
+
+        # Verify export was called with correct format
+        mock_pydub_segment.export.assert_called_once_with(flac_path, format="flac")
+
+    def test_mp3_export_uses_pydub(self, tmp_path: Path) -> None:
+        """MP3 export uses pydub (soundfile doesn't support mp3)."""
+        mp3_path = tmp_path / "output.mp3"
+
+        samples = np.random.rand(22050).astype(np.float32)
+        segment = AudioSegment(samples=samples, sample_rate=22050)
+
+        mock_pydub_segment = MagicMock()
+
+        with (
+            patch("soundlab.io.audio_io.sf.write", side_effect=Exception("MP3 not supported")),
+            patch("soundlab.io.audio_io.PydubAudioSegment", return_value=mock_pydub_segment),
+        ):
+            save_audio(segment, mp3_path)
+
+        # Verify pydub export was called with mp3 format
+        mock_pydub_segment.export.assert_called_once_with(mp3_path, format="mp3")
+
+
+# --------------------------------------------------------------------------- #
 # Roundtrip Integration Tests
 # --------------------------------------------------------------------------- #
 

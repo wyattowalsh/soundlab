@@ -14,7 +14,9 @@ dev = [
     "pytest>=8.0,<10",
     "pytest-cov>=4.0,<6",
     "pytest-asyncio>=0.23,<1",
+    "pytest-benchmark>=4.0,<5",
     "hypothesis>=6.100,<7",
+    "mido>=1.3,<2",
     "ruff>=0.4,<1",
     "ty>=0.0.10,<0.1",
     "pre-commit>=3.7,<5",
@@ -76,6 +78,10 @@ markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
     "gpu: marks tests requiring GPU",
     "integration: marks integration tests",
+    "voice: marks voice module tests",
+    "benchmark: marks performance benchmark tests",
+    "requires_tts: marks tests requiring Coqui TTS installation",
+    "requires_rvc: marks tests requiring RVC manual setup",
 ]
 
 [tool.coverage.run]

@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from pathlib import Path
+from unittest.mock import MagicMock, call, patch
 
+import numpy as np
 import pytest
 
 pytest.importorskip("pydantic")
@@ -334,3 +336,233 @@ class TestSeparationModelIntegration:
         for model in DemucsModel:
             config = SeparationConfig(model=model)
             assert config.model == model
+
+
+# --------------------------------------------------------------------------- #
+# Instrumental Property Tests
+# --------------------------------------------------------------------------- #
+
+
+class TestInstrumentalProperty:
+    """Tests for the instrumental property of StemResult."""
+
+    @pytest.fixture
+    def mock_audio_data(self) -> np.ndarray:
+        """Sample audio data for testing."""
+        return np.random.rand(44100, 2).astype(np.float32)  # 1 second stereo @ 44.1kHz
+
+    @pytest.fixture
+    def sample_rate(self) -> int:
+        """Standard sample rate for testing."""
+        return 44100
+
+    @pytest.fixture
+    def stem_result_empty(self, tmp_path: Path) -> StemResult:
+        """StemResult with empty stems dict."""
+        return StemResult(
+            stems={},
+            source_path=tmp_path / "song.mp3",
+            config=SeparationConfig(),
+            processing_time_seconds=10.0,
+        )
+
+    @pytest.fixture
+    def stem_result_full(self, tmp_path: Path) -> StemResult:
+        """StemResult with all 4 stems."""
+        output_dir = tmp_path / "output"
+        output_dir.mkdir(parents=True, exist_ok=True)
+        return StemResult(
+            stems={
+                "vocals": output_dir / "vocals.wav",
+                "drums": output_dir / "drums.wav",
+                "bass": output_dir / "bass.wav",
+                "other": output_dir / "other.wav",
+            },
+            source_path=tmp_path / "song.mp3",
+            config=SeparationConfig(),
+            processing_time_seconds=30.0,
+        )
+
+    @pytest.fixture
+    def stem_result_partial(self, tmp_path: Path) -> StemResult:
+        """StemResult with only drums stem."""
+        output_dir = tmp_path / "output"
+        output_dir.mkdir(parents=True, exist_ok=True)
+        return StemResult(
+            stems={
+                "vocals": output_dir / "vocals.wav",
+                "drums": output_dir / "drums.wav",
+            },
+            source_path=tmp_path / "song.mp3",
+            config=SeparationConfig(),
+            processing_time_seconds=15.0,
+        )
+
+    def test_instrumental_property_returns_none_when_no_stems(
+        self, stem_result_empty: StemResult
+    ) -> None:
+        """instrumental should return None when stems dict is empty."""
+        assert stem_result_empty.instrumental is None
+
+    def test_instrumental_property_returns_none_when_only_vocals(
+        self, tmp_path: Path
+    ) -> None:
+        """instrumental should return None when only vocals stem exists."""
+        output_dir = tmp_path / "output"
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        result = StemResult(
+            stems={"vocals": output_dir / "vocals.wav"},
+            source_path=tmp_path / "song.mp3",
+            config=SeparationConfig(),
+            processing_time_seconds=10.0,
+        )
+
+        assert result.instrumental is None
+
+    @patch("soundlab.separation.models.sf.write")
+    @patch("soundlab.separation.models.sf.read")
+    def test_instrumental_property_computes_on_demand(
+        self,
+        mock_read: MagicMock,
+        mock_write: MagicMock,
+        stem_result_full: StemResult,
+        mock_audio_data: np.ndarray,
+        sample_rate: int,
+    ) -> None:
+        """instrumental should load stem files, sum them, and save result."""
+        # Setup mock to return audio data
+        mock_read.return_value = (mock_audio_data, sample_rate)
+
+        # Make stem files "exist"
+        for stem_path in stem_result_full.stems.values():
+            stem_path.parent.mkdir(parents=True, exist_ok=True)
+            stem_path.touch()
+
+        # Access the property
+        instrumental_path = stem_result_full.instrumental
+
+        # Verify reads occurred for non-vocal stems
+        expected_read_calls = [
+            call(stem_result_full.stems["drums"]),
+            call(stem_result_full.stems["bass"]),
+            call(stem_result_full.stems["other"]),
+        ]
+        mock_read.assert_has_calls(expected_read_calls, any_order=True)
+        assert mock_read.call_count == 3
+
+        # Verify write occurred
+        mock_write.assert_called_once()
+        write_args = mock_write.call_args
+        assert write_args[0][0] == stem_result_full.stems["drums"].parent / "instrumental.wav"
+        assert write_args[0][2] == sample_rate
+
+        # Verify return value
+        assert instrumental_path == stem_result_full.stems["drums"].parent / "instrumental.wav"
+
+    @patch("soundlab.separation.models.sf.write")
+    @patch("soundlab.separation.models.sf.read")
+    def test_instrumental_property_caches_result(
+        self,
+        mock_read: MagicMock,
+        mock_write: MagicMock,
+        stem_result_full: StemResult,
+        mock_audio_data: np.ndarray,
+        sample_rate: int,
+    ) -> None:
+        """instrumental should cache result and not recompute on subsequent calls."""
+        mock_read.return_value = (mock_audio_data, sample_rate)
+
+        # Make stem files "exist"
+        for stem_path in stem_result_full.stems.values():
+            stem_path.parent.mkdir(parents=True, exist_ok=True)
+            stem_path.touch()
+
+        # First access
+        first_result = stem_result_full.instrumental
+
+        # Second access
+        second_result = stem_result_full.instrumental
+
+        # Results should be identical
+        assert first_result == second_result
+
+        # Read should only be called during first access (3 stems)
+        assert mock_read.call_count == 3
+
+        # Write should only be called once
+        mock_write.assert_called_once()
+
+    def test_instrumental_property_with_missing_stem_files(
+        self, stem_result_full: StemResult
+    ) -> None:
+        """instrumental should return None when stem paths exist but files don't."""
+        # Stem paths are in stems dict but files don't exist on disk
+        # The property should handle this gracefully
+        result = stem_result_full.instrumental
+
+        assert result is None
+
+    @patch("soundlab.separation.models.sf.write")
+    @patch("soundlab.separation.models.sf.read")
+    def test_instrumental_property_handles_partial_stems(
+        self,
+        mock_read: MagicMock,
+        mock_write: MagicMock,
+        stem_result_partial: StemResult,
+        mock_audio_data: np.ndarray,
+        sample_rate: int,
+    ) -> None:
+        """instrumental should work with only some non-vocal stems (e.g., just drums)."""
+        mock_read.return_value = (mock_audio_data, sample_rate)
+
+        # Make only drums file exist (vocals exists but is not used for instrumental)
+        drums_path = stem_result_partial.stems["drums"]
+        drums_path.parent.mkdir(parents=True, exist_ok=True)
+        drums_path.touch()
+
+        # Access the property
+        instrumental_path = stem_result_partial.instrumental
+
+        # Verify only drums was read (only non-vocal stem available)
+        mock_read.assert_called_once_with(drums_path)
+
+        # Verify write occurred
+        mock_write.assert_called_once()
+
+        # Verify return value
+        assert instrumental_path == drums_path.parent / "instrumental.wav"
+
+    @patch("soundlab.separation.models.sf.write")
+    @patch("soundlab.separation.models.sf.read")
+    def test_instrumental_property_handles_mixed_existing_files(
+        self,
+        mock_read: MagicMock,
+        mock_write: MagicMock,
+        stem_result_full: StemResult,
+        mock_audio_data: np.ndarray,
+        sample_rate: int,
+    ) -> None:
+        """instrumental should skip missing files and use available ones."""
+        mock_read.return_value = (mock_audio_data, sample_rate)
+
+        # Create only drums and bass files, not 'other'
+        drums_path = stem_result_full.stems["drums"]
+        bass_path = stem_result_full.stems["bass"]
+        drums_path.parent.mkdir(parents=True, exist_ok=True)
+        drums_path.touch()
+        bass_path.touch()
+
+        # Access the property
+        instrumental_path = stem_result_full.instrumental
+
+        # Verify reads for existing files only
+        assert mock_read.call_count == 2
+        mock_read.assert_any_call(drums_path)
+        mock_read.assert_any_call(bass_path)
+
+        # Verify write occurred
+        mock_write.assert_called_once()
+
+        # Verify return value
+        assert instrumental_path == drums_path.parent / "instrumental.wav"

@@ -1,6 +1,6 @@
 [project]
 name = "soundlab"
-version = "0.1.0"
+version = "1.0.0"
 description = "Production-ready music processing library for stem separation, transcription, effects, and voice generation"
 requires-python = ">=3.12"
 readme = "README.md"
@@ -17,7 +17,7 @@ keywords = [
     "voice-conversion",
 ]
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Developers",
     "Intended Audience :: Science/Research",
     "License :: OSI Approved :: MIT License",
@@ -49,9 +49,10 @@ dependencies = [
 
 [project.optional-dependencies]
 # NOTE: basic-pitch requires TensorFlow which only supports Python <3.12
-# For Python 3.12+, transcription features will require a future basic-pitch release
+# For Python 3.12+, use CREPE for pitch/melody transcription (PyTorch-based)
 transcription = [
     "basic-pitch>=0.3,<0.4; python_version < '3.12'",
+    "crepe>=0.0.16; python_version >= '3.12'",
 ]
 
 voice = [

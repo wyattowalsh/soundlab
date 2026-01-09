@@ -228,8 +228,105 @@ class TestBatchExport:
         assert results["stem1.wav"].name == "stem1.wav"
 
 
+class TestBatchExportExtended:
+    """Extended tests for batch_export function."""
+
+    @pytest.fixture
+    def sample_segment(self) -> AudioSegment:
+        """Create a sample AudioSegment for testing."""
+        samples = np.array([0.1, 0.2, 0.3, 0.4], dtype=np.float32)
+        return AudioSegment(samples=samples, sample_rate=44100)
+
+    def test_empty_segments_dict(self, tmp_path: Path) -> None:
+        """Empty segments dict returns empty dict."""
+        result = batch_export({}, tmp_path)
+        assert result == {}
+
+    def test_normalize_lufs_passthrough(self, tmp_path: Path, sample_segment: AudioSegment) -> None:
+        """normalize_lufs parameter passed to export_audio."""
+        segments = {"test": sample_segment}
+
+        with patch("soundlab.io.export.export_audio") as mock_export:
+            mock_export.return_value = tmp_path / "test.wav"
+            batch_export(segments, tmp_path, normalize_lufs=-14.0)
+
+            mock_export.assert_called_once()
+            call_kwargs = mock_export.call_args
+            assert call_kwargs.kwargs.get("normalize_lufs") == -14.0
+
+    def test_preserves_segment_names(self, tmp_path: Path, sample_segment: AudioSegment) -> None:
+        """Output paths use segment names as keys."""
+        segments = {"vocals": sample_segment, "drums": sample_segment}
+        result = batch_export(segments, tmp_path)
+
+        assert "vocals" in result
+        assert "drums" in result
+        assert len(result) == 2
+
+    def test_creates_nested_output_directory(
+        self, tmp_path: Path, sample_segment: AudioSegment
+    ) -> None:
+        """Creates output directory if it doesn't exist."""
+        output_dir = tmp_path / "nested" / "output"
+        segments = {"test": sample_segment}
+
+        result = batch_export(segments, output_dir)
+
+        assert output_dir.exists()
+        assert "test" in result
+        assert result["test"].exists()
+
+
+class TestNormalizeExtension:
+    """Tests for _normalize_extension helper."""
+
+    def test_audio_format_enum(self) -> None:
+        """AudioFormat enum converts to string."""
+        from soundlab.io.export import _normalize_extension
+
+        assert _normalize_extension(AudioFormat.WAV) == "wav"
+        assert _normalize_extension(AudioFormat.MP3) == "mp3"
+        assert _normalize_extension(AudioFormat.FLAC) == "flac"
+
+    def test_string_with_leading_dot(self) -> None:
+        """String with leading dot has dot removed."""
+        from soundlab.io.export import _normalize_extension
+
+        assert _normalize_extension(".mp3") == "mp3"
+        assert _normalize_extension(".wav") == "wav"
+        assert _normalize_extension(".flac") == "flac"
+
+    def test_string_uppercase_normalized(self) -> None:
+        """Uppercase string is lowercased."""
+        from soundlab.io.export import _normalize_extension
+
+        assert _normalize_extension("WAV") == "wav"
+        assert _normalize_extension("FLAC") == "flac"
+        assert _normalize_extension("MP3") == "mp3"
+
+    def test_string_lowercase_unchanged(self) -> None:
+        """Lowercase string returned as-is."""
+        from soundlab.io.export import _normalize_extension
+
+        assert _normalize_extension("wav") == "wav"
+        assert _normalize_extension("mp3") == "mp3"
+        assert _normalize_extension("flac") == "flac"
+
+    def test_none_returns_default_wav(self) -> None:
+        """None returns default 'wav' extension."""
+        from soundlab.io.export import _normalize_extension
+
+        assert _normalize_extension(None) == "wav"
+
+    def test_empty_string_returns_default_wav(self) -> None:
+        """Empty string returns default 'wav' extension."""
+        from soundlab.io.export import _normalize_extension
+
+        assert _normalize_extension("") == "wav"
+
+
 class TestNormalizeLufs:
-    """Tests for LUFS normalization in export."""
+    """Tests for _normalize_lufs helper."""
 
     def test_normalize_lufs_requires_pyloudnorm(self, tmp_path: Path) -> None:
         """LUFS normalization raises error if pyloudnorm unavailable."""
@@ -241,3 +338,60 @@ class TestNormalizeLufs:
 
             with pytest.raises(ImportError):
                 export_audio(segment, tmp_path / "out.wav", normalize_lufs=-14.0)
+
+    def test_applies_normalization_with_pyloudnorm(self) -> None:
+        """Normalization applied when pyloudnorm available."""
+        from unittest.mock import MagicMock
+
+        from soundlab.io.export import _normalize_lufs
+
+        # Create test segment
+        samples = np.array([0.1, 0.2, 0.3, 0.4], dtype=np.float32)
+        segment = AudioSegment(samples=samples, sample_rate=44100)
+
+        # Mock pyloudnorm module
+        mock_pyln = MagicMock()
+        mock_meter = MagicMock()
+        mock_meter.integrated_loudness.return_value = -20.0
+        mock_pyln.Meter.return_value = mock_meter
+        mock_pyln.normalize.loudness.return_value = np.array([0.2, 0.4, 0.6, 0.8], dtype=np.float32)
+
+        with patch("soundlab.io.export.importlib.import_module", return_value=mock_pyln):
+            result = _normalize_lufs(segment, target_lufs=-14.0)
+
+        # Verify pyloudnorm was called correctly
+        mock_pyln.Meter.assert_called_once_with(44100)
+        mock_meter.integrated_loudness.assert_called_once()
+        mock_pyln.normalize.loudness.assert_called_once()
+
+        # Verify result is a new AudioSegment
+        assert isinstance(result, AudioSegment)
+        assert result.sample_rate == segment.sample_rate
+
+    def test_handles_stereo_input(self) -> None:
+        """Normalization handles stereo audio (channels, samples) format."""
+        from unittest.mock import MagicMock
+
+        from soundlab.io.export import _normalize_lufs
+
+        # Create stereo test segment (2 channels, 4 samples)
+        samples = np.array([[0.1, 0.2, 0.3, 0.4], [0.15, 0.25, 0.35, 0.45]], dtype=np.float32)
+        segment = AudioSegment(samples=samples, sample_rate=44100)
+
+        # Mock pyloudnorm module
+        mock_pyln = MagicMock()
+        mock_meter = MagicMock()
+        mock_meter.integrated_loudness.return_value = -20.0
+        mock_pyln.Meter.return_value = mock_meter
+        # pyloudnorm returns (samples, channels) format
+        mock_pyln.normalize.loudness.return_value = np.array(
+            [[0.2, 0.3], [0.4, 0.5], [0.6, 0.7], [0.8, 0.9]], dtype=np.float32
+        )
+
+        with patch("soundlab.io.export.importlib.import_module", return_value=mock_pyln):
+            result = _normalize_lufs(segment, target_lufs=-14.0)
+
+        # Verify result shape is (channels, samples)
+        assert result.samples.ndim == 2
+        assert result.samples.shape[0] == 2  # channels
+        assert result.sample_rate == segment.sample_rate
