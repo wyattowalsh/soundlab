@@ -403,7 +403,7 @@ class TestCREPETranscriber:
         ):
             config = TranscriptionConfig()
             transcriber = CREPETranscriber(config=config)
-            result = transcriber.transcribe_full(audio_file, output_dir)
+            result = transcriber.transcribe(audio_file, output_dir)
 
             # Should have called save_midi
             mock_save_midi.assert_called_once()
@@ -435,19 +435,20 @@ class TestCREPETranscriber:
             patch("soundlab.transcription.crepe_backend.save_midi"),
         ):
             transcriber = CREPETranscriber()
-            result = transcriber.transcribe_full(audio_file, output_dir)
+            result = transcriber.transcribe(audio_file, output_dir)
 
             assert len(result.notes) == 0
             assert result.processing_time >= 0
 
-    def test_crepe_transcribe_protocol_interface(
+    def test_crepe_transcribe_returns_midi_result(
         self,
         mock_crepe_module: MagicMock,
         mock_librosa_for_crepe: MagicMock,
         tmp_path: Path,
     ) -> None:
-        """CREPETranscriber.transcribe should return Path (protocol interface)."""
+        """CREPETranscriber.transcribe should return MIDIResult."""
         from soundlab.transcription.crepe_backend import CREPETranscriber
+        from soundlab.transcription.models import MIDIResult
 
         audio_file = tmp_path / "melody.wav"
         audio_file.touch()
@@ -462,8 +463,11 @@ class TestCREPETranscriber:
             transcriber = CREPETranscriber()
             result = transcriber.transcribe(audio_file, output_dir)
 
-            # Protocol interface should return Path
-            assert isinstance(result, Path)
+            # Should return MIDIResult (consistent with other backends)
+            assert isinstance(result, MIDIResult)
+            assert hasattr(result, "notes")
+            assert hasattr(result, "path")
+            assert hasattr(result, "processing_time")
 
     def test_crepe_clamp_velocity(self) -> None:
         """Test CREPE velocity clamping function."""

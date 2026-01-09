@@ -180,22 +180,7 @@ class CREPETranscriber:
 
         return weighted_freq, mean_confidence
 
-    def transcribe(self, stem_wav: Path, output_dir: Path) -> Path:
-        """Transcribe audio to MIDI using CREPE pitch estimation.
-
-        This method implements the TranscriberBackend protocol interface.
-
-        Args:
-            stem_wav: Path to the input audio file.
-            output_dir: Directory for output MIDI file.
-
-        Returns:
-            Path to the generated MIDI file.
-        """
-        result = self.transcribe_full(stem_wav, output_dir)
-        return result.path
-
-    def transcribe_full(
+    def transcribe(
         self, audio_path: str | Path, output_dir: str | Path
     ) -> MIDIResult:
         """Transcribe audio to MIDI with full result details.
