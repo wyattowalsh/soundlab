@@ -11,7 +11,6 @@ pydantic = pytest.importorskip("pydantic")
 
 from soundlab.transcription.models import MIDIResult, NoteEvent, TranscriptionConfig
 
-
 # --------------------------------------------------------------------------- #
 # TranscriptionConfig Tests
 # --------------------------------------------------------------------------- #

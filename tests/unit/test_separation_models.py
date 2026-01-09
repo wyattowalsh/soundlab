@@ -11,7 +11,6 @@ pydantic = pytest.importorskip("pydantic")
 
 from soundlab.separation.models import DemucsModel, SeparationConfig, StemResult
 
-
 # --------------------------------------------------------------------------- #
 # DemucsModel Enum Tests
 # --------------------------------------------------------------------------- #

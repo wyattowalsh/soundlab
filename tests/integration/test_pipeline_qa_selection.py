@@ -9,9 +9,6 @@ import pytest
 np = pytest.importorskip("numpy")
 
 # Import models first to ensure Pydantic deferred types are available
-from soundlab.separation.models import DemucsModel, SeparationConfig
-from soundlab.transcription.models import TranscriptionConfig
-
 from soundlab.pipeline import (
     CandidatePlan,
     CandidateScore,
@@ -24,6 +21,8 @@ from soundlab.pipeline import (
     read_checkpoint,
     write_checkpoint,
 )
+from soundlab.separation.models import DemucsModel, SeparationConfig
+from soundlab.transcription.models import TranscriptionConfig
 
 # Rebuild models to resolve deferred annotations
 PipelineConfig.model_rebuild()
@@ -339,7 +338,6 @@ class TestPipelineResume:
 
     def test_candidate_plan_with_transcription_config(self) -> None:
         """Test CandidatePlan with transcription configs."""
-        from soundlab.transcription.models import TranscriptionConfig
 
         plan = CandidatePlan(
             name="with_transcription",

@@ -88,6 +88,7 @@ from soundlab.pipeline import (
     score_separation,
     write_checkpoint,
 )
+from soundlab.separation import DemucsModel, SeparationConfig, StemResult, StemSeparator
 from soundlab.transcription import (
     MIDIResult,
     MIDITranscriber,
@@ -111,6 +112,7 @@ __all__ = [
     "CompressorConfig",
     "ConfigurationError",
     "DelayConfig",
+    "DemucsModel",
     "DistortionConfig",
     "EffectConfig",
     "EffectsChain",
@@ -139,6 +141,7 @@ __all__ = [
     "RunArtifacts",
     "SVCConfig",
     "SVCResult",
+    "SeparationConfig",
     "SeparatorBackend",
     "SoundLabConfig",
     "SoundLabError",
@@ -146,6 +149,8 @@ __all__ = [
     "StageCheckpoint",
     "StemPostProcessor",
     "StemQAResult",
+    "StemResult",
+    "StemSeparator",
     "TTSConfig",
     "TTSResult",
     "TempoResult",

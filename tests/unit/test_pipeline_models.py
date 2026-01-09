@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime  # noqa: F401 - needed for StageCheckpoint.model_rebuild()
+from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -313,7 +313,6 @@ class TestStageCheckpoint:
 
     def test_full_checkpoint(self) -> None:
         """StageCheckpoint with all fields."""
-        from datetime import datetime
 
         checkpoint = StageCheckpoint(
             stage="transcription",

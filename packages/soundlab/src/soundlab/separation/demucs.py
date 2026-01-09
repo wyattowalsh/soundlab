@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import torch
 from loguru import logger
@@ -24,8 +24,8 @@ class StemSeparator:
     def __init__(self, config: SeparationConfig | None = None) -> None:
         """Initialize the stem separator."""
         self.config = config or SeparationConfig()
-        self._model: object | None = None
-        self._device: str | None = None
+        self._model: Any = None  # Demucs model (BagOfModels | HDemucs | HTDemucs)
+        self._device: str = "cpu"
 
     def _load_model(self) -> None:
         """Lazy-load the Demucs model."""
@@ -84,25 +84,27 @@ class StemSeparator:
         output_dir.mkdir(parents=True, exist_ok=True)
 
         self._load_model()
-        if self._model is None or self._device is None:
+        if self._model is None:
             raise ProcessingError("Demucs model failed to initialize")
+
+        model = self._model  # Type narrowing for type checker
 
         start_time = time.perf_counter()
 
         logger.info(f"Loading audio: {audio_path}")
         wav = AudioFile(audio_path).read(
             streams=0,
-            samplerate=self._model.samplerate,
-            channels=self._model.audio_channels,
+            samplerate=model.samplerate,
+            channels=model.audio_channels,
         )
         wav = wav.to(self._device)
 
-        self._check_memory(wav.shape[-1] / self._model.samplerate)
+        self._check_memory(wav.shape[-1] / model.samplerate)
 
         logger.info(f"Separating with {self.config.model}...")
         with torch.no_grad():
             sources = apply_model(
-                self._model,
+                model,
                 wav[None],
                 segment=self.config.segment_length if self.config.split else None,
                 overlap=self.config.overlap,
@@ -153,4 +155,5 @@ class StemSeparator:
             audio = audio.T
 
         subtype = "PCM_24" if self.config.int24 else "FLOAT" if self.config.float32 else "PCM_16"
-        sf.write(path, audio, self._model.samplerate, subtype=subtype)
+        samplerate = self._model.samplerate if self._model is not None else 44100
+        sf.write(path, audio, samplerate, subtype=subtype)

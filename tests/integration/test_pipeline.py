@@ -8,11 +8,7 @@ import pytest
 
 np = pytest.importorskip("numpy")
 
-from datetime import UTC, datetime  # noqa: F401
-
-# Import models first to ensure Pydantic deferred types are available
-from soundlab.separation.models import SeparationConfig  # noqa: F401
-from soundlab.transcription.models import TranscriptionConfig  # noqa: F401
+from datetime import UTC, datetime
 
 from soundlab.pipeline import (
     PipelineConfig,
@@ -28,6 +24,10 @@ from soundlab.pipeline import (
     write_checkpoint,
 )
 from soundlab.pipeline.models import CandidatePlan
+
+# Import models first to ensure Pydantic deferred types are available
+from soundlab.separation.models import SeparationConfig  # noqa: F401
+from soundlab.transcription.models import TranscriptionConfig  # noqa: F401
 
 # Rebuild models to resolve deferred annotations - need datetime in scope
 StageCheckpoint.model_rebuild()
@@ -151,7 +151,6 @@ class TestPipelineIntegration:
 
     def test_checkpoint_write_read_roundtrip(self, run_root: Path) -> None:
         """Test checkpoint write/read roundtrip."""
-        from datetime import datetime
 
         run_id = "test_run_789"
         checkpoint = StageCheckpoint(
