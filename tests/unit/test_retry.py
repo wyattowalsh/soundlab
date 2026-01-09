@@ -81,8 +81,9 @@ class TestRetryIO:
             with pytest.raises(RetryError) as exc_info:
                 always_fails()
 
-            # Verify the original exception is accessible
-            assert "Persistent failure" in str(exc_info.value)
+            # Verify the original exception is accessible via last_attempt
+            original_exc = exc_info.value.last_attempt.exception()
+            assert "Persistent failure" in str(original_exc)
             # io_retry has stop_after_attempt(3)
             assert call_count == 3
 
@@ -238,8 +239,9 @@ class TestRetryOOM:
             with pytest.raises(RetryError) as exc_info:
                 always_oom()
 
-            # Verify the original exception is accessible
-            assert "Persistent OOM" in str(exc_info.value)
+            # Verify the original exception is accessible via last_attempt
+            original_exc = exc_info.value.last_attempt.exception()
+            assert "Persistent OOM" in str(original_exc)
             # gpu_retry has stop_after_attempt(2)
             assert call_count == 2
 
@@ -379,8 +381,9 @@ class TestRetryNetwork:
             with pytest.raises(RetryError) as exc_info:
                 always_fails()
 
-            # Verify the original exception is accessible
-            assert "Persistent timeout" in str(exc_info.value)
+            # Verify the original exception is accessible via last_attempt
+            original_exc = exc_info.value.last_attempt.exception()
+            assert "Persistent timeout" in str(original_exc)
             # network_retry has stop_after_attempt(3)
             assert call_count == 3
 
