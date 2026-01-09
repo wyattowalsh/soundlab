@@ -109,9 +109,8 @@ print(f"Loudness: {result.loudness.integrated_lufs:.1f} LUFS")
 ### Effects Processing
 
 ```python
-from soundlab import load_audio
+from soundlab import load_audio, save_audio
 from soundlab.effects import EffectsChain, CompressorConfig, ReverbConfig, LimiterConfig
-from soundlab.core.audio import AudioSegment
 
 audio = load_audio("vocals.wav")
 chain = EffectsChain([
@@ -119,8 +118,8 @@ chain = EffectsChain([
     ReverbConfig(room_size=0.3, wet_level=0.2),
     LimiterConfig(threshold_db=-1.0),
 ])
-output_path = chain.process("vocals.wav", "vocals_processed.wav")
-print(f"Processed audio saved to: {output_path}")
+processed = chain.process(audio.samples, audio.sample_rate)
+save_audio(processed, audio.sample_rate, "vocals_processed.wav")
 ```
 
 ---

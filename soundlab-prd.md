@@ -93,6 +93,15 @@ soundlab/
 │               │   ├── onsets.py     # Transient detection
 │               │   └── models.py     # AnalysisResult model
 │               │
+│               ├── pipeline/         # Max-quality Colab orchestration + QA
+│               │   ├── __init__.py
+│               │   ├── models.py     # PipelineConfig, QAConfig, CandidatePlan
+│               │   ├── interfaces.py # Backend protocols (separator/transcriber/etc.)
+│               │   ├── candidates.py # Strategy generation + excerpt plans
+│               │   ├── qa.py         # Separation + MIDI QA metrics/scoring
+│               │   ├── postprocess.py# Stem/MIDI post-processing utilities
+│               │   └── cache.py      # Run IDs, cache paths, checkpoints
+│               │
 │               ├── voice/            # Voice generation module
 │               │   ├── __init__.py
 │               │   ├── tts.py        # XTTS-v2 wrapper
@@ -1089,6 +1098,58 @@ class EffectsChain:
         return output_path
 ```
 
+### 4.6 Max-Quality Pipeline + QA (Colab Orchestration)
+
+To keep the notebook thin while delivering **best-possible stems + MIDI**, the package includes a
+pipeline layer that coordinates staged separation, multi-candidate selection, QA scoring, and
+alignment-safe post-processing. The notebook only wires UI inputs to these abstractions.
+
+**Core interfaces (protocols)**
+
+```python
+# packages/soundlab/src/soundlab/pipeline/interfaces.py
+class SeparatorBackend(Protocol):
+    def separate(self, mix_wav: Path, output_dir: Path) -> dict[str, Path]: ...
+
+class TranscriberBackend(Protocol):
+    def transcribe(self, stem_wav: Path, output_dir: Path) -> Path: ...
+
+class StemPostProcessor(Protocol):
+    def process(self, stems: dict[str, Path], output_dir: Path) -> dict[str, Path]: ...
+
+class MidiPostProcessor(Protocol):
+    def process(self, midi_path: Path, output_dir: Path) -> Path: ...
+
+class QAEvaluator(Protocol):
+    def score(self, mix_wav: Path, stems: dict[str, Path]) -> dict[str, float]: ...
+```
+
+**Pipeline guarantees**
+
+- **Staged separation default**: vocals-first extraction -> 4-stem on instrumental -> optional
+  refinement pass for problematic stems.
+- **Excerpt-based candidate selection**: try 2-4 separation strategies on a 30s excerpt, score,
+  then run the best strategy on the full track.
+- **Stem-specific transcription routing**: drums/vocals/bass/other choose different backends and
+  parameter presets; supports two-candidate transcription and confidence-weighted merge.
+- **Resumable checkpoints**: `run_id = hash(audio) + hash(config)`, with `runs/`, `cache/`,
+  `artifacts/`, `reports/` and stage-level skip logic.
+- **Alignment-safe post-processing**: denoise/filter/trim only on AMT copies; originals remain
+  sample-aligned for reconstruction and residual QA.
+
+**QA heuristics (no ground truth required)**
+
+- **Separation QA**: reconstruction error (mix vs sum of stems), residual spectral flatness,
+  clipping/intersample peak checks, stereo coherence, and stem leakage proxies (e.g., vocals
+  voiced-ness vs broadband energy; drums onset density vs tonal energy).
+- **Transcription QA**: notes/sec, max polyphony, pitch range sanity per stem, onset alignment vs
+  audio onsets, confidence thresholds, and empty-MIDI detection with fallback.
+
+**Fallback matrix**
+
+- If a separator fails or scores below threshold -> switch to next strategy or safer chunk size.
+- If transcription fails or QA is bad -> fallback per-stem to simpler models/presets.
+
 ---
 
 ## 5. Notebook Architecture
@@ -1125,7 +1186,38 @@ notebooks/soundlab_studio.ipynb
 └── Cell 11: Cleanup (Code)
 ```
 
+### 5.2b Max-Quality Notebook Structure (Expanded)
+
+The max-quality notebook follows the same core flow but adds explicit cells for candidate
+selection, QA, post-processing, and resumability:
+
+```
+notebooks/soundlab_studio.ipynb (max-quality mode)
+├── Cell 0: Resume From Checkpoint (Code)
+├── Cell 1: Header & Run Overview (Markdown)
+├── Cell 2: Runtime Introspection + Determinism Flags (Code + Form)
+├── Cell 3: Package Installation (Code)
+├── Cell 4: Drive Mount + Cache Roots (Code + Form)
+├── Cell 5: Upload + Canonical Decode + Hash/Metadata (Code + Form)
+├── Cell 6: Excerpt Selection (Code + Form)
+├── Cell 7: Separation Candidate Plan (Code + Form)
+├── Cell 8: Separation (Excerpt -> QA -> Full Track) (Code)
+├── Cell 9: Stem Post-Processing (Alignment-Safe) (Code + Form)
+├── Cell 10: Transcription Routing + Execution (Code + Form)
+├── Cell 11: MIDI Cleanup + Tempo/Quantize + Program Map (Code + Form)
+├── Cell 12: Preview + QA Dashboard + Rerun Controls (Gradio)
+├── Cell 13: Export + Reports + Zip (Code + Form)
+└── Cell 14: Cleanup (Code)
+```
+
+These cells delegate all heavy logic to `soundlab.pipeline` and only manage UI, configuration,
+and artifact display. Optional voice generation can be inserted before export when the voice
+extras are installed.
+
 ### 5.3 Example Notebook Cells
+
+The examples below show minimal patterns; max-quality mode extends these with QA scoring,
+candidate selection, and post-processing hooks.
 
 #### Cell 2: Environment Setup
 
@@ -1362,6 +1454,18 @@ def download_interface():
 
 download_interface().launch(height=400)
 ```
+
+### 5.4 Quality Gates, Preview, and Rerun Controls
+
+The notebook must surface quality indicators so users can trust results and re-run when needed:
+
+- **QA report table**: separation score per candidate, residual RMS, spectral flatness, clipping
+  flags, and transcription sanity stats (notes/sec, polyphony, pitch range).
+- **Preview panel**: stem audio players, residual audio player, MIDI-rendered previews (per stem
+  and combined), and mix reconstruction for A/B comparison.
+- **Rerun controls**: buttons to select next-best separation or transcription candidate without
+  clearing previous outputs.
+- **Export bundle**: stems + MIDI + config snapshot + metrics CSV + env report for reproducibility.
 
 ---
 

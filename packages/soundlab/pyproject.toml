@@ -1,0 +1,95 @@
+[project]
+name = "soundlab"
+version = "0.1.0"
+description = "Production-ready music processing library for stem separation, transcription, effects, and voice generation"
+requires-python = ">=3.12"
+readme = "README.md"
+license = { text = "MIT" }
+authors = [{ name = "Wyatt Walsh" }]
+keywords = [
+    "audio",
+    "music",
+    "stem-separation",
+    "demucs",
+    "midi",
+    "transcription",
+    "effects",
+    "voice-conversion",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Multimedia :: Sound/Audio",
+    "Topic :: Multimedia :: Sound/Audio :: Analysis",
+    "Topic :: Multimedia :: Sound/Audio :: Conversion",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Typing :: Typed",
+]
+
+dependencies = [
+    "demucs>=4.0.1,<5",
+    "pedalboard>=0.9,<1",
+    "librosa>=0.10,<0.11",
+    "soundfile>=0.12,<0.13",
+    "pydub>=0.25,<0.26",
+    "pydantic>=2.7,<3",
+    "numpy>=1.26,<3",
+    "tenacity>=8.3,<9",
+    "loguru>=0.7,<0.8",
+    "tqdm>=4.66,<5",
+    "httpx>=0.27,<0.28",
+    "torch>=2.2",
+    "typer>=0.12,<1",
+]
+
+[project.optional-dependencies]
+# NOTE: basic-pitch requires TensorFlow which only supports Python <3.12
+# For Python 3.12+, transcription features will require a future basic-pitch release
+transcription = [
+    "basic-pitch>=0.3,<0.4; python_version < '3.12'",
+]
+
+voice = [
+    "coqui-tts>=0.22",
+]
+
+notebook = [
+    "gradio>=4.26,<5",
+]
+
+visualization = [
+    "matplotlib>=3.8,<4",
+]
+
+all = [
+    "soundlab[transcription,voice,notebook,visualization]",
+]
+
+[project.urls]
+Homepage = "https://github.com/wyattowalsh/soundlab"
+Documentation = "https://wyattowalsh.github.io/soundlab"
+Repository = "https://github.com/wyattowalsh/soundlab"
+Changelog = "https://github.com/wyattowalsh/soundlab/blob/main/CHANGELOG.md"
+
+[project.scripts]
+soundlab = "soundlab.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.sdist]
+include = ["/src"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/soundlab"]
+
+[dependency-groups]
+dev = [
+    "matplotlib>=3.8,<4",
+]

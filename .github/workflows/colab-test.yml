@@ -1,0 +1,141 @@
+# .github/workflows/colab-test.yml
+name: Colab Test
+
+on:
+  schedule:
+    # Run weekly on Sundays at 00:00 UTC
+    - cron: "0 0 * * 0"
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  colab-compatibility:
+    name: Colab Compatibility Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Install package with notebook extras
+        run: uv sync --frozen --all-packages --extra notebook
+
+      - name: Validate notebook structure
+        run: |
+          uv run python -c "
+          import json
+          from pathlib import Path
+          
+          nb_path = Path('notebooks/soundlab_studio.ipynb')
+          if not nb_path.exists():
+              print('❌ Notebook not found')
+              exit(1)
+          
+          with open(nb_path) as f:
+              nb = json.load(f)
+          
+          cells = nb.get('cells', [])
+          print(f'📓 Notebook: {nb_path.name}')
+          print(f'   Cells: {len(cells)}')
+          
+          # Count cell types
+          code_cells = sum(1 for c in cells if c.get('cell_type') == 'code')
+          md_cells = sum(1 for c in cells if c.get('cell_type') == 'markdown')
+          print(f'   Code cells: {code_cells}')
+          print(f'   Markdown cells: {md_cells}')
+          
+          print('✅ Notebook structure valid')
+          "
+
+      - name: Test package imports
+        run: |
+          uv run python -c "
+          print('Testing soundlab imports...')
+          
+          # Core package
+          import soundlab
+          print(f'✅ soundlab {soundlab.__version__}')
+          
+          # Core modules
+          from soundlab.core import AudioSegment, AudioMetadata, SoundLabConfig
+          print('✅ soundlab.core')
+          
+          # I/O
+          from soundlab.io import load_audio, save_audio, get_audio_metadata
+          print('✅ soundlab.io')
+          
+          # Separation
+          from soundlab.separation import StemSeparator, SeparationConfig, DemucsModel
+          print('✅ soundlab.separation')
+          
+          # Transcription
+          from soundlab.transcription import TranscriptionConfig, NoteEvent, MIDIResult
+          print('✅ soundlab.transcription')
+          
+          # Effects
+          from soundlab.effects import EffectsChain
+          print('✅ soundlab.effects')
+          
+          # Analysis
+          from soundlab.analysis import detect_tempo, detect_key, analyze_loudness
+          print('✅ soundlab.analysis')
+          
+          # Pipeline
+          from soundlab.pipeline import PipelineConfig, QAConfig, CandidatePlan
+          print('✅ soundlab.pipeline')
+          
+          # Utils
+          from soundlab.utils import configure_logging, get_device
+          print('✅ soundlab.utils')
+          
+          print()
+          print('🎉 All imports successful!')
+          "
+
+      - name: Test Gradio availability
+        run: |
+          uv run python -c "
+          try:
+              import gradio as gr
+              print(f'✅ Gradio {gr.__version__} available')
+          except ImportError as e:
+              print(f'⚠️ Gradio not available: {e}')
+              exit(1)
+          "
+
+      - name: Simulate notebook cell execution (dry run)
+        run: |
+          uv run python -c "
+          import json
+          from pathlib import Path
+          
+          nb_path = Path('notebooks/soundlab_studio.ipynb')
+          with open(nb_path) as f:
+              nb = json.load(f)
+          
+          print('🔍 Checking code cells for syntax errors...')
+          
+          cells = nb.get('cells', [])
+          errors = []
+          
+          for i, cell in enumerate(cells):
+              if cell.get('cell_type') != 'code':
+                  continue
+              
+              source = ''.join(cell.get('source', []))
+              if not source.strip():
+                  continue
+              
+              try:
+                  compile(source, f'<cell {i}>', 'exec')
+                  print(f'  ✅ Cell {i}: syntax OK')
+              except SyntaxError as e:
+                  errors.append((i, str(e)))
+                  print(f'  ❌ Cell {i}: {e}')
+          
+          if errors:
+              print(f'\\n❌ {len(errors)} cell(s) have syntax errors')
+              exit(1)
+          else:
+              print(f'\\n✅ All {sum(1 for c in cells if c.get(\"cell_type\") == \"code\")} code cells have valid syntax')
+          "

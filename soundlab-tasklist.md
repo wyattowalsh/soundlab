@@ -1,6 +1,6 @@
 # SoundLab Build Task List
 
-**Optimization Target:** Massively parallel Claude Code subagents  
+**Optimization Target:** Massively parallel OpenAI GPT Codex sessions  
 **Batch Strategy:** Maximize parallelism within each iteration; minimize cross-batch dependencies  
 **Task Granularity:** Single file or tightly-coupled file pair per task  
 
@@ -10,13 +10,66 @@
 
 ```
 For each batch:
-  1. Spawn N subagents (one per task)
-  2. Each agent receives: task ID, task spec, relevant PRD section, dependency outputs
-  3. Agents execute independently and commit to feature branches
-  4. Barrier sync: wait for all batch tasks to complete
-  5. Merge all feature branches → main
-  6. Proceed to next batch
+  1. Split tasks into parallel lanes (each lane can run independently)
+  2. Spawn N Codex sessions (one per lane)
+  3. Each session receives: lane task list, PRD sections, dependency outputs
+  4. Sessions edit only their lane files and report changes (no commits unless requested)
+  5. Barrier sync: wait for all lanes to complete
+  6. Integrate changes into main working tree
+  7. Proceed to next batch
 ```
+
+---
+
+## Parallelization Rules (Codex Lanes)
+
+- One Codex session per lane; tasks in a lane are done sequentially by that session.
+- Do not edit files owned by another lane in the same batch.
+- If a change requires touching a shared file (for example `__init__.py`), keep all edits to that
+  file in a single lane to avoid conflicts.
+- Keep tightly coupled cross-file edits within the same lane.
+- Use the barrier sync to reconcile conflicts before starting the next batch.
+
+---
+
+## Lane Status Legend
+
+- **Unclaimed:** Lane line ends after the path.
+- **CLAIMED:** Append ` — CLAIMED by <session_name> at <YYYY-MM-DD HH:MM>` to the lane line.
+- **DONE:** Replace CLAIMED with `DONE by <session_name> at <YYYY-MM-DD HH:MM>`.
+
+Only edit the single lane line you are claiming or completing.
+
+Example:
+- `- Batch 3 Lane 3C (Analysis models and feature extractors): `tasklists/lanes/batch-03-lane-3C.md` — CLAIMED by codex-07 at 2026-01-09 10:42`
+
+---
+
+## Session Start Checklist (Required)
+
+1. Open `soundlab-tasklist.md`.
+2. Find the earliest batch with any lane not marked DONE.
+3. Pick the first unclaimed lane in that batch.
+4. Claim it immediately by appending the CLAIMED tag to that lane line.
+5. Open the lane file and execute tasks sequentially.
+
+If you cannot claim a lane because all lanes are CLAIMED or DONE, stop and report status.
+
+---
+
+## Session Completion Checklist (Required)
+
+1. Ensure only lane-owned files were edited.
+2. Summarize changes with file paths and brief notes.
+3. Update the lane line to DONE with timestamp in `soundlab-tasklist.md`.
+
+---
+
+## Source of Truth
+
+- Lane ownership and status live **only** in `soundlab-tasklist.md`.
+- Do not create extra claim files or lane status files.
+- Lane task details live in `tasklists/lanes/`.
 
 ---
 
@@ -24,305 +77,134 @@ For each batch:
 
 All tasks in this batch have **zero dependencies** and create foundational files.
 
-| ID | Task | Output Files | Spec |
-|----|------|--------------|------|
-| `B0.01` | Create root pyproject.toml | `pyproject.toml` | Workspace config with `[tool.uv.workspace]`, dev-dependencies, ruff/pytest/coverage config per PRD §3 |
-| `B0.02` | Create package pyproject.toml | `packages/soundlab/pyproject.toml` | Package metadata, dependencies, optional-dependencies `[voice,notebook,all]`, build-system per PRD §3 |
-| `B0.03` | Create .python-version | `.python-version` | Content: `3.12` |
-| `B0.04` | Create README.md | `README.md` | Project overview, installation (`uv sync`), quick start code example, badges placeholders |
-| `B0.05` | Create LICENSE | `LICENSE` | MIT license with current year, author: Wyatt Walsh |
-| `B0.06` | Create CHANGELOG.md | `CHANGELOG.md` | Keep-a-changelog format, `## [Unreleased]` section, `## [0.1.0]` placeholder |
-| `B0.07` | Create CONTRIBUTING.md | `CONTRIBUTING.md` | Dev setup with uv, PR guidelines, commit conventions, test requirements |
-| `B0.08` | Create .gitignore | `.gitignore` | Python, uv, Jupyter, IDE, OS patterns; include `.venv/`, `__pycache__/`, `*.egg-info/`, `.coverage`, `dist/` |
-| `B0.09` | Create directory structure | All `__init__.py` files | Create empty `__init__.py` in: `packages/soundlab/src/soundlab/`, and all submodules: `core/`, `separation/`, `transcription/`, `effects/`, `analysis/`, `voice/`, `io/`, `utils/` |
-| `B0.10` | Create py.typed markers | `packages/soundlab/py.typed`, `packages/soundlab/src/soundlab/py.typed` | Empty PEP 561 marker files |
-| `B0.11` | Create test directory structure | `tests/conftest.py`, `tests/unit/__init__.py`, `tests/integration/__init__.py` | Empty conftest with TODO comment, empty init files |
-| `B0.12` | Create notebooks directory | `notebooks/.gitkeep`, `notebooks/examples/.gitkeep` | Placeholder files for notebook directories |
 
+### Lane files
+- Batch 0 Lane 0A (Core configuration): `tasklists/lanes/batch-00-lane-0A.md` — DONE by codex-01 at 2026-01-08 23:52
+- Batch 0 Lane 0B (Project documentation): `tasklists/lanes/batch-00-lane-0B.md` — DONE by codex-21 at 2026-01-08 23:56
+- Batch 0 Lane 0C (Repo structure and hygiene): `tasklists/lanes/batch-00-lane-0C.md` — DONE by codex-01 at 2026-01-08 23:55
 **Barrier: All B0 tasks must complete before B1**
-
----
 
 ## Batch 1: Core Module (8 tasks, fully parallel)
 
 Dependencies: B0 complete (directory structure exists)
 
-| ID | Task | Output Files | Spec |
-|----|------|--------------|------|
-| `B1.01` | Create exceptions module | `packages/soundlab/src/soundlab/core/exceptions.py` | Full exception hierarchy per PRD §4.1: `SoundLabError`, `AudioLoadError`, `AudioFormatError`, `ModelNotFoundError`, `GPUMemoryError`, `ProcessingError`, `ConfigurationError`, `VoiceConversionError` |
-| `B1.02` | Create types module | `packages/soundlab/src/soundlab/core/types.py` | Type aliases: `AudioArray = NDArray[np.float32]`, `SampleRate = int`, `PathLike = str \| Path`; Protocols: `ProgressCallback`, `AudioProcessor` |
-| `B1.03` | Create audio models | `packages/soundlab/src/soundlab/core/audio.py` | `AudioFormat`, `SampleRate`, `BitDepth` enums; `AudioMetadata`, `AudioSegment` Pydantic models per PRD §4.2 |
-| `B1.04` | Create config module | `packages/soundlab/src/soundlab/core/config.py` | `SoundLabConfig` singleton with env var loading: `SOUNDLAB_LOG_LEVEL`, `SOUNDLAB_GPU_MODE`, `SOUNDLAB_CACHE_DIR`, `SOUNDLAB_OUTPUT_DIR` |
-| `B1.05` | Create core __init__ | `packages/soundlab/src/soundlab/core/__init__.py` | Public exports: all exceptions, `AudioSegment`, `AudioMetadata`, `AudioFormat`, `SoundLabConfig` |
-| `B1.06` | Create GPU utilities | `packages/soundlab/src/soundlab/utils/gpu.py` | `get_device(mode: str) -> str`, `get_free_vram_gb() -> float`, `clear_gpu_cache()`, `is_cuda_available() -> bool` |
-| `B1.07` | Create logging utilities | `packages/soundlab/src/soundlab/utils/logging.py` | `configure_logging(level: str, log_file: Path \| None)` using loguru; format with timestamp, level, module |
-| `B1.08` | Create retry utilities | `packages/soundlab/src/soundlab/utils/retry.py` | Tenacity decorators: `io_retry`, `gpu_retry`, `network_retry` with configs per PRD §10.2 |
 
+### Lane files
+- Batch 1 Lane 1A (Core models and config): `tasklists/lanes/batch-01-lane-1A.md` — DONE by codex-01 at 2026-01-09 00:02
+- Batch 1 Lane 1B (Utils (GPU, logging, retry)): `tasklists/lanes/batch-01-lane-1B.md` — DONE by codex-21 at 2026-01-09 00:02
 **Barrier: All B1 tasks must complete before B2**
-
----
 
 ## Batch 2: Utility Completion + I/O Module (6 tasks, fully parallel)
 
 Dependencies: B1 complete (core types, exceptions available)
 
-| ID | Task | Output Files | Spec |
-|----|------|--------------|------|
-| `B2.01` | Create progress utilities | `packages/soundlab/src/soundlab/utils/progress.py` | `ProgressCallback` protocol impl, `TqdmProgressCallback`, `GradioProgressCallback` adapters |
-| `B2.02` | Create utils __init__ | `packages/soundlab/src/soundlab/utils/__init__.py` | Public exports: `get_device`, `configure_logging`, `io_retry`, `gpu_retry`, `TqdmProgressCallback` |
-| `B2.03` | Create audio I/O | `packages/soundlab/src/soundlab/io/audio_io.py` | `load_audio(path) -> AudioSegment`, `save_audio(segment, path, format)`, `get_audio_metadata(path) -> AudioMetadata`; use soundfile + pydub fallback |
-| `B2.04` | Create MIDI I/O | `packages/soundlab/src/soundlab/io/midi_io.py` | `load_midi(path) -> MIDIData`, `save_midi(data, path)`, `MIDIData` model with notes, tempo, time_signature |
-| `B2.05` | Create export utilities | `packages/soundlab/src/soundlab/io/export.py` | `export_audio(segment, path, format, normalize_lufs)`, `create_zip(files, output_path)`, `batch_export(segments, output_dir)` |
-| `B2.06` | Create io __init__ | `packages/soundlab/src/soundlab/io/__init__.py` | Public exports: `load_audio`, `save_audio`, `get_audio_metadata`, `load_midi`, `save_midi`, `export_audio` |
 
+### Lane files
+- Batch 2 Lane 2A (Utils progress and exports): `tasklists/lanes/batch-02-lane-2A.md` — DONE by codex-01 at 2026-01-09 00:07
+- Batch 2 Lane 2B (Audio I/O): `tasklists/lanes/batch-02-lane-2B.md` — DONE by codex-21 at 2026-01-09 00:10
+- Batch 2 Lane 2C (MIDI I/O and export): `tasklists/lanes/batch-02-lane-2C.md` — DONE by codex-01 at 2026-01-09 00:20
 **Barrier: All B2 tasks must complete before B3**
 
----
-
-## Batch 3: Feature Modules - Models Only (10 tasks, fully parallel)
+## Batch 3: Feature Modules - Models Only (11 tasks, fully parallel)
 
 Dependencies: B2 complete (core + utils + io available)  
 Strategy: Create all Pydantic models first, then implementations
 
-| ID | Task | Output Files | Spec |
-|----|------|--------------|------|
-| `B3.01` | Create separation models | `packages/soundlab/src/soundlab/separation/models.py` | `DemucsModel` enum, `SeparationConfig`, `StemResult` per PRD §4.3 |
-| `B3.02` | Create transcription models | `packages/soundlab/src/soundlab/transcription/models.py` | `TranscriptionConfig(onset_thresh, frame_thresh, min_note_length, min_freq, max_freq)`, `NoteEvent(start, end, pitch, velocity)`, `MIDIResult(notes, path, config, processing_time)` |
-| `B3.03` | Create effects models | `packages/soundlab/src/soundlab/effects/models.py` | Base `EffectConfig` with `to_plugin() -> Plugin` abstract; `CompressorConfig`, `LimiterConfig`, `GateConfig`, `ReverbConfig`, `DelayConfig`, `ChorusConfig`, `DistortionConfig`, `PhaserConfig`, `HighpassConfig`, `LowpassConfig`, `GainConfig` |
-| `B3.04` | Create analysis models | `packages/soundlab/src/soundlab/analysis/models.py` | `TempoResult(bpm, confidence, beats)`, `KeyDetectionResult` per PRD §4.4, `LoudnessResult(lufs, dynamic_range, peak)`, `SpectralResult(centroid, bandwidth, rolloff)`, `AnalysisResult` composite |
-| `B3.05` | Create voice models | `packages/soundlab/src/soundlab/voice/models.py` | `TTSConfig(text, language, speaker_wav, temperature, speed)`, `TTSResult(audio_path, processing_time)`, `SVCConfig(pitch_shift, f0_method, index_rate, protect_rate)`, `SVCResult(audio_path, processing_time)` |
-| `B3.06` | Create separation utils | `packages/soundlab/src/soundlab/separation/utils.py` | `calculate_segments(duration, segment_length, overlap) -> list[tuple[float, float]]`, `overlap_add(segments, overlap) -> AudioArray` |
-| `B3.07` | Create transcription viz | `packages/soundlab/src/soundlab/transcription/visualization.py` | `render_piano_roll(notes, output_path, figsize, colormap)` using matplotlib |
-| `B3.08` | Create analysis tempo | `packages/soundlab/src/soundlab/analysis/tempo.py` | `detect_tempo(y, sr) -> TempoResult` using librosa.beat.beat_track |
-| `B3.09` | Create analysis loudness | `packages/soundlab/src/soundlab/analysis/loudness.py` | `measure_loudness(y, sr) -> LoudnessResult` using pyloudnorm |
-| `B3.10` | Create analysis spectral | `packages/soundlab/src/soundlab/analysis/spectral.py` | `analyze_spectral(y, sr) -> SpectralResult` using librosa spectral features |
 
+### Lane files
+- Batch 3 Lane 3A (Separation + transcription scaffolding): `tasklists/lanes/batch-03-lane-3A.md` — DONE by codex-21 at 2026-01-09 00:41
+- Batch 3 Lane 3B (Effects models): `tasklists/lanes/batch-03-lane-3B.md` — DONE by codex-01 at 2026-01-09 00:38
+- Batch 3 Lane 3C (Analysis models and feature extractors): `tasklists/lanes/batch-03-lane-3C.md` — DONE by codex-01 at 2026-01-09 00:41
+- Batch 3 Lane 3D (Voice + pipeline models): `tasklists/lanes/batch-03-lane-3D.md` — DONE by codex-01 at 2026-01-09 01:00
 **Barrier: All B3 tasks must complete before B4**
 
----
-
-## Batch 4: Feature Modules - Implementations (10 tasks, fully parallel)
+## Batch 4: Feature Modules - Implementations (16 tasks, fully parallel)
 
 Dependencies: B3 complete (all models available)
 
-| ID | Task | Output Files | Spec |
-|----|------|--------------|------|
-| `B4.01` | Create Demucs wrapper | `packages/soundlab/src/soundlab/separation/demucs.py` | `StemSeparator` class per PRD §4.3 with lazy model loading, memory checking, retry logic, segment processing |
-| `B4.02` | Create separation __init__ | `packages/soundlab/src/soundlab/separation/__init__.py` | Public exports: `StemSeparator`, `SeparationConfig`, `DemucsModel`, `StemResult` |
-| `B4.03` | Create Basic Pitch wrapper | `packages/soundlab/src/soundlab/transcription/basic_pitch.py` | `MIDITranscriber` class with `transcribe(audio_path, output_dir) -> MIDIResult`; use correct API: `onset_thresh`, `frame_thresh` |
-| `B4.04` | Create transcription __init__ | `packages/soundlab/src/soundlab/transcription/__init__.py` | Public exports: `MIDITranscriber`, `TranscriptionConfig`, `MIDIResult`, `render_piano_roll` |
-| `B4.05` | Create key detection | `packages/soundlab/src/soundlab/analysis/key.py` | Full K-K algorithm implementation per PRD §4.4 with `MusicalKey`, `Mode` enums, `detect_key()` function |
-| `B4.06` | Create onset detection | `packages/soundlab/src/soundlab/analysis/onsets.py` | `detect_onsets(y, sr) -> OnsetResult` with timestamps, count, strength |
-| `B4.07` | Create analysis __init__ | `packages/soundlab/src/soundlab/analysis/__init__.py` | Public exports + `analyze_audio(path) -> AnalysisResult` convenience function that runs all analyzers |
-| `B4.08` | Create effects chain | `packages/soundlab/src/soundlab/effects/chain.py` | `EffectsChain` class per PRD §4.5 with fluent API, process_array, process file |
-| `B4.09` | Create effects implementations | `packages/soundlab/src/soundlab/effects/dynamics.py`, `effects/eq.py`, `effects/time_based.py`, `effects/creative.py` | Implement `to_plugin()` for all effect configs; map to Pedalboard plugins |
-| `B4.10` | Create effects __init__ | `packages/soundlab/src/soundlab/effects/__init__.py` | Public exports: `EffectsChain`, all config classes |
 
+### Lane files
+- Batch 4 Lane 4A (Separation implementations): `tasklists/lanes/batch-04-lane-4A.md` — DONE by codex-21 at 2026-01-09 01:19
+- Batch 4 Lane 4B (Transcription implementations): `tasklists/lanes/batch-04-lane-4B.md` — DONE by codex-01 at 2026-01-09 01:05
+- Batch 4 Lane 4C (Analysis implementations): `tasklists/lanes/batch-04-lane-4C.md` — DONE by codex-01 at 2026-01-09 01:15
+- Batch 4 Lane 4D (Effects implementations): `tasklists/lanes/batch-04-lane-4D.md` — DONE by codex-01 at 2026-01-09 01:22
+- Batch 4 Lane 4E (Pipeline implementations): `tasklists/lanes/batch-04-lane-4E.md` — DONE by codex-01 at 2026-01-09 01:28
 **Barrier: All B4 tasks must complete before B5**
-
----
 
 ## Batch 5: Voice Module + Package Root (6 tasks, fully parallel)
 
 Dependencies: B4 complete (all feature modules available)
 
-| ID | Task | Output Files | Spec |
-|----|------|--------------|------|
-| `B5.01` | Create TTS wrapper | `packages/soundlab/src/soundlab/voice/tts.py` | `TTSGenerator` class wrapping coqui-tts XTTS-v2; `generate(config) -> TTSResult`; handle model download |
-| `B5.02` | Create SVC wrapper | `packages/soundlab/src/soundlab/voice/svc.py` | `VoiceConverter` class for RVC; `convert(audio_path, model_path, config) -> SVCResult`; document manual setup requirements |
-| `B5.03` | Create voice __init__ | `packages/soundlab/src/soundlab/voice/__init__.py` | Public exports: `TTSGenerator`, `TTSConfig`, `VoiceConverter`, `SVCConfig` |
-| `B5.04` | Create package version | `packages/soundlab/src/soundlab/_version.py` | `__version__ = "0.1.0"`, `__version_info__ = (0, 1, 0)` |
-| `B5.05` | Create package __init__ | `packages/soundlab/src/soundlab/__init__.py` | Public API exports from all modules; `__version__` import; `__all__` list |
-| `B5.06` | Create CLI entry point | `packages/soundlab/src/soundlab/cli.py` | Typer CLI with subcommands: `separate`, `transcribe`, `analyze`, `effects`, `tts`; `--help` for each |
 
+### Lane files
+- Batch 5 Lane 5A (Voice module): `tasklists/lanes/batch-05-lane-5A.md` — DONE by codex-21 at 2026-01-09 01:43
+- Batch 5 Lane 5B (Package root): `tasklists/lanes/batch-05-lane-5B.md` — DONE by codex-01 at 2026-01-09 01:38
+- Batch 5 Lane 5C (CLI): `tasklists/lanes/batch-05-lane-5C.md` — DONE by codex-01 at 2026-01-09 01:45
 **Barrier: All B5 tasks must complete before B6**
 
----
-
-## Batch 6: Unit Tests (12 tasks, fully parallel)
+## Batch 6: Unit Tests (15 tasks, fully parallel)
 
 Dependencies: B5 complete (package fully implemented)
 
-| ID | Task | Output Files | Spec |
-|----|------|--------------|------|
-| `B6.01` | Create test fixtures | `tests/conftest.py` | pytest fixtures: `sample_audio_path`, `sample_mono_audio`, `sample_stereo_audio`, `temp_output_dir`, `mock_gpu_available` |
-| `B6.02` | Create test audio files | `tests/fixtures/audio/sine_440hz_3s.wav`, `tests/fixtures/audio/silence_1s.wav` | Generate programmatically in conftest or include small test files |
-| `B6.03` | Test core exceptions | `tests/unit/test_exceptions.py` | Test exception hierarchy, inheritance, string representation |
-| `B6.04` | Test core audio models | `tests/unit/test_audio_models.py` | Test `AudioSegment`, `AudioMetadata` validation, properties, conversions |
-| `B6.05` | Test utils gpu | `tests/unit/test_gpu.py` | Test `get_device()` with mocked torch, `is_cuda_available()` |
-| `B6.06` | Test utils logging | `tests/unit/test_logging.py` | Test `configure_logging()` sets correct levels, handlers |
-| `B6.07` | Test io audio | `tests/unit/test_audio_io.py` | Test `load_audio()`, `save_audio()` roundtrip, format detection, error handling |
-| `B6.08` | Test separation models | `tests/unit/test_separation_models.py` | Test `DemucsModel` enum properties, `SeparationConfig` validation, defaults |
-| `B6.09` | Test transcription models | `tests/unit/test_transcription_models.py` | Test `TranscriptionConfig` bounds validation, `NoteEvent` ordering |
-| `B6.10` | Test effects models | `tests/unit/test_effects_models.py` | Test all effect configs validate parameters, `to_plugin()` returns correct types |
-| `B6.11` | Test analysis key | `tests/unit/test_key_detection.py` | Test K-K algorithm with known key audio samples, Camelot conversion |
-| `B6.12` | Test effects chain | `tests/unit/test_effects_chain.py` | Test `EffectsChain` fluent API, empty chain passthrough, multi-effect processing |
 
+### Lane files
+- Batch 6 Lane 6A (Fixtures and shared test data): `tasklists/lanes/batch-06-lane-6A.md` — DONE by codex-01 at 2026-01-09 01:48
+- Batch 6 Lane 6B (Core + utils tests): `tasklists/lanes/batch-06-lane-6B.md` — DONE by codex-01 at 2026-01-09 02:46
+- Batch 6 Lane 6C (IO + separation + transcription tests): `tasklists/lanes/batch-06-lane-6C.md` — DONE by codex-01 at 2026-01-09 02:42
+- Batch 6 Lane 6D (Effects + analysis tests): `tasklists/lanes/batch-06-lane-6D.md` — DONE by codex-01 at 2026-01-09 02:37
+- Batch 6 Lane 6E (Pipeline tests): `tasklists/lanes/batch-06-lane-6E.md` — DONE by codex-01 at 2026-01-09 02:37
 **Barrier: All B6 tasks must complete before B7**
 
----
-
-## Batch 7: Integration Tests (4 tasks, fully parallel)
+## Batch 7: Integration Tests (5 tasks, fully parallel)
 
 Dependencies: B6 complete (unit tests validate components)
 
-| ID | Task | Output Files | Spec |
-|----|------|--------------|------|
-| `B7.01` | Test separation integration | `tests/integration/test_separation_integration.py` | End-to-end test: load audio → separate → verify stems exist; mark `@pytest.mark.slow` |
-| `B7.02` | Test transcription integration | `tests/integration/test_transcription_integration.py` | End-to-end: load audio → transcribe → verify MIDI output; mark `@pytest.mark.slow` |
-| `B7.03` | Test analysis integration | `tests/integration/test_analysis_integration.py` | End-to-end: `analyze_audio()` returns valid `AnalysisResult` with all fields |
-| `B7.04` | Test pipeline integration | `tests/integration/test_pipeline.py` | Full pipeline: upload → separate → analyze → effects → export; verify zip contents |
 
+### Lane files
+- Batch 7 Lane 7A (Separation + transcription integration): `tasklists/lanes/batch-07-lane-7A.md` — DONE by codex-01 at 2026-01-09 02:50
+- Batch 7 Lane 7B (Analysis integration): `tasklists/lanes/batch-07-lane-7B.md` — DONE by codex-01 at 2026-01-09 02:53
+- Batch 7 Lane 7C (Pipeline integration and QA selection): `tasklists/lanes/batch-07-lane-7C.md` — DONE by codex-01 at 2026-01-09 02:54
 **Barrier: All B7 tasks must complete before B8**
 
----
-
-## Batch 8: Notebook Implementation (6 tasks, fully parallel)
+## Batch 8: Notebook Implementation (13 tasks, fully parallel)
 
 Dependencies: B7 complete (package tested and working)
 
-| ID | Task | Output Files | Spec |
-|----|------|--------------|------|
-| `B8.01` | Create notebook header cells | `notebooks/soundlab_studio.ipynb` (cells 1-3) | Markdown header, environment setup Form cell, package installation Form cell per PRD §5.3 |
-| `B8.02` | Create upload interface cell | `notebooks/soundlab_studio.ipynb` (cell 4) | Gradio upload interface with `gr.Audio`, metadata display per PRD §5.3 |
-| `B8.03` | Create separation cell | `notebooks/soundlab_studio.ipynb` (cell 5) | Colab Forms config + execution code calling `soundlab.separation` |
-| `B8.04` | Create transcription cell | `notebooks/soundlab_studio.ipynb` (cell 6) | Colab Forms config + execution + piano roll Gradio display |
-| `B8.05` | Create analysis + effects cells | `notebooks/soundlab_studio.ipynb` (cells 7-8) | Analysis Form/execution, Effects chain Form/execution with A/B preview |
-| `B8.06` | Create voice + export cells | `notebooks/soundlab_studio.ipynb` (cells 9-11) | Voice generation Form, Export Gradio interface, Cleanup cell |
 
+### Lane files
+- Batch 8 Lane 8A (Notebook scaffolding and setup cells (avoid overlapping cell ranges)): `tasklists/lanes/batch-08-lane-8A.md` — DONE by codex-01 at 2026-01-09 02:59
+- Batch 8 Lane 8B (Input ingestion + canonical decode): `tasklists/lanes/batch-08-lane-8B.md` — DONE by codex-01 at 2026-01-09 02:59
+- Batch 8 Lane 8C (Separation + candidate selection): `tasklists/lanes/batch-08-lane-8C.md` — DONE by codex-01 at 2026-01-09 03:01
+- Batch 8 Lane 8D (Post-processing + transcription + MIDI cleanup): `tasklists/lanes/batch-08-lane-8D.md` — DONE by codex-01 at 2026-01-09 03:07
+- Batch 8 Lane 8E (QA, preview, and export): `tasklists/lanes/batch-08-lane-8E.md` — DONE by codex-21 at 2026-01-09 03:08
 **Barrier: All B8 tasks must complete before B9**
-
----
 
 ## Batch 9: CI/CD + Documentation (8 tasks, fully parallel)
 
 Dependencies: B8 complete (notebook implemented)
 
-| ID | Task | Output Files | Spec |
-|----|------|--------------|------|
-| `B9.01` | Create CI workflow | `.github/workflows/ci.yml` | lint, typecheck, test jobs per PRD §8.1 |
-| `B9.02` | Create release workflow | `.github/workflows/release.yml` | Build + PyPI publish on tag per PRD §8.2 |
-| `B9.03` | Create Colab test workflow | `.github/workflows/colab-test.yml` | Weekly scheduled test of notebook imports |
-| `B9.04` | Create pre-commit config | `.pre-commit-config.yaml` | Hooks: ruff, ruff-format, check-yaml, end-of-file-fixer, trailing-whitespace |
-| `B9.05` | Create mkdocs config | `docs/mkdocs.yml` | mkdocs-material theme, nav structure, mkdocstrings plugin config |
-| `B9.06` | Create quickstart guide | `docs/guides/quickstart.md` | Installation, basic usage examples for each module |
-| `B9.07` | Create Colab usage guide | `docs/guides/colab-usage.md` | Step-by-step Colab notebook usage with screenshots placeholders |
-| `B9.08` | Create extending guide | `docs/guides/extending.md` | How to add new effects, analyzers, voice models |
 
+### Lane files
+- Batch 9 Lane 9A (CI workflows): `tasklists/lanes/batch-09-lane-9A.md` — DONE by codex-01 at 2026-01-09 03:10
+- Batch 9 Lane 9B (Tooling and docs config): `tasklists/lanes/batch-09-lane-9B.md` — DONE by codex-01 at 2026-01-09 03:10
+- Batch 9 Lane 9C (Guides): `tasklists/lanes/batch-09-lane-9C.md` — DONE by codex-01 at 2026-01-09 03:12
 **Barrier: All B9 tasks must complete before B10**
-
----
 
 ## Batch 10: Polish + Examples (6 tasks, fully parallel)
 
 Dependencies: B9 complete (CI + docs in place)
 
-| ID | Task | Output Files | Spec |
-|----|------|--------------|------|
-| `B10.01` | Create example notebook: stems | `notebooks/examples/stem_separation.ipynb` | Focused example: load song → htdemucs_ft → save stems → compare A/B |
-| `B10.02` | Create example notebook: MIDI | `notebooks/examples/midi_transcription.ipynb` | Focused example: piano recording → Basic Pitch → MIDI → piano roll |
-| `B10.03` | Create example notebook: voice | `notebooks/examples/voice_conversion.ipynb` | Focused example: TTS generation + RVC conversion demo |
-| `B10.04` | Create model download script | `scripts/download_models.py` | CLI to pre-download Demucs, XTTS models to cache |
-| `B10.05` | Create benchmark script | `scripts/benchmark.py` | Benchmark all modules on reference audio, output markdown table |
-| `B10.06` | Update README with badges | `README.md` | Add CI status, PyPI version, coverage, license badges; update examples with tested code |
 
----
+### Lane files
+- Batch 10 Lane 10A (Example notebooks): `tasklists/lanes/batch-10-lane-10A.md` — DONE by codex-01 at 2026-01-09 03:16
+- Batch 10 Lane 10B (Scripts): `tasklists/lanes/batch-10-lane-10B.md` — DONE by codex-01 at 2026-01-09 03:20
+- Batch 10 Lane 10C (README polish): `tasklists/lanes/batch-10-lane-10C.md` — DONE by codex-01 at 2026-01-09 03:19
 
 ## Batch 11: Final Validation (3 tasks, sequential)
 
 Dependencies: B10 complete  
 **Note:** These run sequentially for final validation
 
-| ID | Task | Output Files | Spec |
-|----|------|--------------|------|
-| `B11.01` | Run full test suite | - | `uv run pytest tests/ -v --cov=soundlab`; ensure >80% coverage |
-| `B11.02` | Build and test package | - | `uv build --package soundlab`; test install in fresh venv |
-| `B11.03` | Validate Colab notebook | - | Open in Colab, run all cells, verify no errors |
 
----
-
-## Summary Statistics
-
-| Metric | Value |
-|--------|-------|
-| Total Batches | 12 |
-| Total Tasks | 91 |
-| Max Parallel Tasks (single batch) | 12 |
-| Estimated Total Agent-Hours | ~45-60 |
-| Estimated Wall-Clock (with parallelism) | ~8-12 hours |
-
----
-
-## Dependency Graph (Mermaid)
-
-```mermaid
-flowchart TD
-    B0[Batch 0: Skeleton<br/>12 tasks] --> B1[Batch 1: Core<br/>8 tasks]
-    B1 --> B2[Batch 2: Utils + I/O<br/>6 tasks]
-    B2 --> B3[Batch 3: Feature Models<br/>10 tasks]
-    B3 --> B4[Batch 4: Feature Impl<br/>10 tasks]
-    B4 --> B5[Batch 5: Voice + Root<br/>6 tasks]
-    B5 --> B6[Batch 6: Unit Tests<br/>12 tasks]
-    B6 --> B7[Batch 7: Integration Tests<br/>4 tasks]
-    B7 --> B8[Batch 8: Notebook<br/>6 tasks]
-    B8 --> B9[Batch 9: CI/CD + Docs<br/>8 tasks]
-    B9 --> B10[Batch 10: Polish<br/>6 tasks]
-    B10 --> B11[Batch 11: Validation<br/>3 tasks]
-```
-
----
-
-## Agent Dispatch Template
-
-```json
-{
-  "task_id": "B3.05",
-  "batch": 3,
-  "title": "Create voice models",
-  "output_files": [
-    "packages/soundlab/src/soundlab/voice/models.py"
-  ],
-  "dependencies": ["B1.01", "B1.03", "B2.06"],
-  "context_files": [
-    "packages/soundlab/src/soundlab/core/exceptions.py",
-    "packages/soundlab/src/soundlab/core/audio.py"
-  ],
-  "prd_sections": ["§7.5"],
-  "spec": "Create Pydantic models: TTSConfig(text, language, speaker_wav, temperature, speed), TTSResult(audio_path, processing_time), SVCConfig(pitch_shift, f0_method, index_rate, protect_rate), SVCResult(audio_path, processing_time). Include field validators, docstrings, __all__ exports.",
-  "acceptance_criteria": [
-    "All models inherit from pydantic.BaseModel",
-    "All fields have type hints",
-    "Validators enforce parameter ranges per PRD §7.5",
-    "Module has __all__ list",
-    "No import errors when loaded standalone"
-  ]
-}
-```
-
----
-
-## Execution Commands
-
-```bash
-# Initialize workspace
-uv init soundlab-workspace
-cd soundlab-workspace
-
-# After B0: Lock dependencies
-uv lock
-
-# After each batch: Run available tests
-uv run pytest tests/ -v -x --tb=short
-
-# After B5: Verify package imports
-uv run python -c "import soundlab; print(soundlab.__version__)"
-
-# After B9: Run full CI locally
-uv run ruff check .
-uv run ruff format --check .
-uv run ty check packages/soundlab/src
-uv run pytest tests/ -v --cov=soundlab
-
-# Final: Build distributable
-uv build --package soundlab
-```
+### Lane files
+- Batch 11 Lane 11A (Sequential validation (single lane)): `tasklists/lanes/batch-11-lane-11A.md` — DONE by codex-01 at 2026-01-09 03:25

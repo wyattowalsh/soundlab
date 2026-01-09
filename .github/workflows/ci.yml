@@ -1,0 +1,113 @@
+# .github/workflows/ci.yml
+name: CI
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main]
+
+env:
+  UV_CACHE_DIR: /tmp/.uv-cache
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+      - run: uv sync --frozen --all-packages
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+
+  typecheck:
+    name: Type Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+      - run: uv sync --frozen --all-packages
+      - run: uv run ty check packages/soundlab/src
+        continue-on-error: true  # Type errors are informational for now
+
+  test:
+    name: Test (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+      - run: uv python install ${{ matrix.python-version }}
+      - run: uv sync --frozen --all-packages
+      - name: Run tests
+        run: |
+          uv run pytest tests/ \
+            -v \
+            --cov=soundlab \
+            --cov-report=xml \
+            --cov-report=term-missing \
+            -m "not slow and not gpu" \
+            --tb=short
+      - name: Upload coverage
+        uses: codecov/codecov-action@v5
+        with:
+          files: coverage.xml
+          flags: unittests
+          name: codecov-${{ matrix.python-version }}
+          fail_ci_if_error: false
+
+  test-slow:
+    name: Slow Tests
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+      - run: uv sync --frozen --all-packages
+      - name: Run slow tests
+        run: |
+          uv run pytest tests/ \
+            -v \
+            -m "slow and not gpu" \
+            --tb=short \
+            --timeout=300
+
+  colab-compat:
+    name: Colab Compatibility
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+      - run: uv sync --frozen --all-packages
+      - name: Verify notebook syntax
+        run: |
+          uv run python -c "
+          import json
+          with open('notebooks/soundlab_studio.ipynb') as f:
+              nb = json.load(f)
+          print(f'✅ Notebook has {len(nb.get(\"cells\", []))} cells')
+          "
+      - name: Check package imports
+        run: |
+          uv run python -c "
+          import soundlab
+          print(f'✅ SoundLab version: {soundlab.__version__}')
+          
+          # Verify core modules
+          from soundlab import separation, transcription, effects, analysis, pipeline
+          print('✅ All core modules importable')
+          "
