@@ -2,7 +2,7 @@
 name = "soundlab"
 version = "1.0.0"
 description = "Production-ready music processing library for stem separation, transcription, effects, and voice generation"
-requires-python = ">=3.12"
+requires-python = ">=3.10"
 readme = "README.md"
 license = { text = "MIT" }
 authors = [{ name = "Wyatt Walsh" }]
@@ -23,6 +23,8 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Topic :: Multimedia :: Sound/Audio",
     "Topic :: Multimedia :: Sound/Audio :: Analysis",
