@@ -1,48 +1,40 @@
-# Release workflow for SoundLab
-# Builds and publishes to PyPI on version tags
-
-name: Release
+name: Package build (publication disabled)
 
 on:
-  push:
-    tags:
-      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 env:
   UV_CACHE_DIR: /tmp/.uv-cache
 
 jobs:
   build:
-    name: Build Package
+    name: Build package artifacts
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
       - uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
-          cache-dependency-glob: "uv.lock"
 
       - name: Build package
         run: uv build --package soundlab
 
       - name: Verify build artifacts
         run: |
-          ls -la dist/
-          python -c "
-          import tarfile
-          import zipfile
+          python - <<'PY'
           from pathlib import Path
 
-          dist = Path('dist')
-          sdist = list(dist.glob('*.tar.gz'))
-          wheel = list(dist.glob('*.whl'))
-
-          assert len(sdist) == 1, f'Expected 1 sdist, found {len(sdist)}'
-          assert len(wheel) == 1, f'Expected 1 wheel, found {len(wheel)}'
-
-          print(f'✅ sdist: {sdist[0].name}')
-          print(f'✅ wheel: {wheel[0].name}')
-          "
+          dist = Path("dist")
+          sdists = list(dist.glob("*.tar.gz"))
+          wheels = list(dist.glob("*.whl"))
+          assert len(sdists) == 1, f"expected one sdist, found {len(sdists)}"
+          assert len(wheels) == 1, f"expected one wheel, found {len(wheels)}"
+          print(f"sdist: {sdists[0].name}")
+          print(f"wheel: {wheels[0].name}")
+          PY
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v6
@@ -52,10 +44,11 @@ jobs:
           retention-days: 5
 
   test-install:
-    name: Test Installation
+    name: Test wheel installation (Python ${{ matrix.python-version }})
     needs: build
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         python-version: ["3.12", "3.13"]
     steps:
@@ -63,42 +56,19 @@ jobs:
         with:
           name: dist
           path: dist/
-
       - uses: astral-sh/setup-uv@v7
-
-      - name: Install Python ${{ matrix.python-version }}
-        run: uv python install ${{ matrix.python-version }}
-
-      - name: Create test environment
-        run: uv venv --python ${{ matrix.python-version }}
-
-      - name: Install from wheel
+      - run: uv python install ${{ matrix.python-version }}
+      - run: uv venv --python ${{ matrix.python-version }}
+      - name: Install and import wheel
         run: |
-          source .venv/bin/activate
-          pip install dist/*.whl
-
-      - name: Verify installation
-        run: |
-          source .venv/bin/activate
-          python -c "
+          uv pip install --python .venv/bin/python dist/*.whl
+          .venv/bin/python - <<'PY'
           import soundlab
-          print(f'SoundLab {soundlab.__version__} installed successfully')
-          from soundlab import separation, transcription, effects, analysis
-          print('✅ All core modules importable')
-          "
+          from soundlab import analysis, effects, separation, transcription
 
-  publish:
-    name: Publish to PyPI
-    needs: [build, test-install]
-    runs-on: ubuntu-latest
-    environment: pypi
-    permissions:
-      id-token: write
-    steps:
-      - uses: actions/download-artifact@v7
-        with:
-          name: dist
-          path: dist/
+          print(f"SoundLab {soundlab.__version__} imports from the built wheel")
+          PY
 
-      - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
+# Publication is intentionally disabled. The PyPI distribution name `soundlab`
+# belongs to another project; selecting a distinct distribution identity requires
+# an explicit, separately reviewed release decision.
