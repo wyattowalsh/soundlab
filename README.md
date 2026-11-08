@@ -1,231 +1,80 @@
 <div align="center">
 
-# 🎛️ SoundLab
+# SoundLab
+
+**One Colab workspace for understanding and transforming music.**
 
 [![CI](https://github.com/wyattowalsh/soundlab/actions/workflows/ci.yml/badge.svg)](https://github.com/wyattowalsh/soundlab/actions/workflows/ci.yml)
-[![PyPI](https://img.shields.io/pypi/v/soundlab?color=blue)](https://pypi.org/project/soundlab/)
-[![Python](https://img.shields.io/pypi/pyversions/soundlab)](https://pypi.org/project/soundlab/)
-[![Coverage](https://codecov.io/gh/wyattowalsh/soundlab/branch/main/graph/badge.svg)](https://codecov.io/gh/wyattowalsh/soundlab)
-[![License](https://img.shields.io/github/license/wyattowalsh/soundlab)](LICENSE)
-[![Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/wyattowalsh/soundlab/blob/main/notebooks/soundlab_studio.ipynb)
+[![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/wyattowalsh/soundlab/blob/main/notebooks/soundlab_studio.ipynb)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-**Production-ready music processing for stem separation, transcription, effects, and voice generation.**
-
-[Documentation](https://wyattowalsh.github.io/soundlab) · [Examples](notebooks/examples/) · [Colab Notebook](https://colab.research.google.com/github/wyattowalsh/soundlab/blob/main/notebooks/soundlab_studio.ipynb)
+Separate · Analyze · Transcribe · Process · Export
 
 </div>
 
----
+> [!IMPORTANT]
+> The PyPI distribution named `soundlab` belongs to a different project. Do **not** use `pip install soundlab` for this repository. Install from this Git repository until a distinct distribution name is selected and released.
 
-## ✨ Features
+## Start in Colab
 
-| Feature | Description |
-|---------|-------------|
-| 🎚️ **Stem Separation** | Demucs HTDemucs/HTDemucs-FT models for vocals, drums, bass, other |
-| 🎤 **Vocal Isolation** | Extract vocals or instrumentals with two-stem separation mode |
-| 🎹 **Audio-to-MIDI** | Basic Pitch transcription with configurable thresholds |
-| 🥁 **Drum-to-MIDI** | Transcribe drum patterns to MIDI with kick, snare, hihat detection |
-| 🎨 **Effects Processing** | Pedalboard-based EQ, compression, reverb, and creative effects |
-| 📊 **Audio Analysis** | Tempo, key, loudness (LUFS), spectral features |
-| 🗣️ **Voice Generation** | XTTS-v2 TTS and RVC voice conversion (optional) |
-| 🔄 **Pipeline** | Checkpointed workflows with QA scoring and candidate selection |
+Open [`notebooks/soundlab_studio.ipynb`](notebooks/soundlab_studio.ipynb), or use the badge above.
 
----
+The repository currently also contains the older root [`soundlab.ipynb`](soundlab.ipynb). The project is being consolidated toward one generated canonical notebook; both files remain until feature parity and migration checks are complete.
 
-## 📦 Installation
+The safe first run should not mount Drive, publish a Gradio link, upload audio to a hosted service, or start paid processing without explicit selection.
 
-### From PyPI
+## Current capabilities
 
-```bash
-pip install soundlab
-```
+- Stem separation and vocal isolation
+- Audio and drum transcription to MIDI
+- Tempo, key, loudness, spectral, and onset analysis
+- Effects processing
+- Optional voice-generation integrations
+- Checkpointing, candidate selection, QA, previews, and export
+- Colab and Gradio interfaces backed by the same Python package
 
-### With Optional Extras
+Capability availability depends on the selected backend, Python version, model terms, checkpoint access, and runtime resources. A passing CPU test suite does not establish GPU fit, model quality, or perceptual correctness.
 
-```bash
-# Voice generation (TTS + RVC)
-pip install soundlab[voice]
-
-# Gradio interface for notebooks
-pip install soundlab[notebook]
-
-# Full installation
-pip install soundlab[voice,notebook]
-```
-
-### From Source
+## Install for development
 
 ```bash
 git clone https://github.com/wyattowalsh/soundlab.git
 cd soundlab
-pip install -e ".[voice,notebook]"
+uv sync --all-packages --extra notebook
 ```
 
-> [!NOTE]
-> Requires Python 3.12+. GPU recommended for stem separation.
+The repository does not currently ship a reviewed lockfile, so CI and local development intentionally avoid `uv sync --frozen` until one is generated and validated.
 
-> **Note**: Google Colab runs Python 3.10, which is fully supported. Python 3.13+ deprecates the `audioop` module used by pydub. For local Python 3.13+ usage, install `audioop-lts` as a workaround, or use wav/flac formats with soundfile which doesn't require audioop.
+## Project model
 
----
+The notebook is the user-facing product. Reusable behavior belongs in the typed package under `packages/soundlab/`.
 
-## 🚀 Quick Start
-
-### Stem Separation
-
-```python
-from soundlab.separation import StemSeparator, SeparationConfig, DemucsModel
-
-# Configure and run separation
-config = SeparationConfig(model=DemucsModel.HTDEMUCS_FT, device="auto")
-separator = StemSeparator(config=config)
-result = separator.separate("song.mp3", output_dir="stems/")
-
-# Access stems
-print(f"Vocals: {result.vocals}")
-print(f"Drums: {result.stems['drums']}")
-print(f"Processing time: {result.processing_time_seconds:.1f}s")
+```text
+notebooks/soundlab_studio.ipynb   # current interactive entrypoint
+soundlab.ipynb                    # legacy entrypoint pending consolidation
+packages/soundlab/src/soundlab/   # canonical reusable Python behavior
+tests/                            # unit and integration evidence
 ```
 
-### Vocal Isolation
+See [`docs/canonicalization.md`](docs/canonicalization.md) for the migration plan.
 
-```python
-# Isolate vocals
-from soundlab.separation import StemSeparator, SeparationConfig
-
-config = SeparationConfig(two_stems="vocals")
-separator = StemSeparator(config)
-result = separator.separate("song.mp3", "output/")
-# result.vocals, result.instrumental
-```
-
-### Audio-to-MIDI Transcription
-
-```python
-from soundlab.transcription import MIDITranscriber, TranscriptionConfig
-
-config = TranscriptionConfig(onset_thresh=0.5, frame_thresh=0.3)
-transcriber = MIDITranscriber(config=config)
-result = transcriber.transcribe("piano.wav", output_dir="midi/")
-
-for note in result.notes[:5]:
-    print(f"Pitch: {note.pitch}, Start: {note.start:.2f}s")
-```
-
-### Drum-to-MIDI Transcription
-
-```python
-# Transcribe drums to MIDI
-from soundlab.transcription import DrumTranscriber
-
-transcriber = DrumTranscriber()
-result = transcriber.transcribe("drums.wav", "output/")
-# Creates MIDI file with kick, snare, hihat events
-```
-
-### Audio Analysis
-
-```python
-from soundlab import analyze_audio
-
-result = analyze_audio("song.mp3")
-print(f"Tempo: {result.tempo.bpm:.1f} BPM")
-print(f"Key: {result.key.key_name} ({result.key.camelot})")
-print(f"Loudness: {result.loudness.integrated_lufs:.1f} LUFS")
-```
-
-### Effects Processing
-
-```python
-from soundlab import load_audio
-from soundlab.effects import EffectsChain, CompressorConfig, ReverbConfig, LimiterConfig
-from soundlab.core.audio import AudioSegment
-
-audio = load_audio("vocals.wav")
-chain = EffectsChain([
-    CompressorConfig(threshold_db=-20, ratio=4.0),
-    ReverbConfig(room_size=0.3, wet_level=0.2),
-    LimiterConfig(threshold_db=-1.0),
-])
-output_path = chain.process("vocals.wav", "vocals_processed.wav")
-print(f"Processed audio saved to: {output_path}")
-```
-
----
-
-## 📓 Colab Notebook
-
-Run SoundLab in Google Colab with an interactive UI:
-
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/wyattowalsh/soundlab/blob/main/notebooks/soundlab_studio.ipynb)
-
-**Features:**
-- GPU-accelerated processing
-- Gradio interface for file upload/download
-- Checkpoint resume for long sessions
-- QA dashboard with audio previews
-
----
-
-## 📚 Documentation
-
-| Guide | Description |
-|-------|-------------|
-| [Quickstart](docs/guides/quickstart.md) | Installation and basic usage |
-| [Colab Usage](docs/guides/colab-usage.md) | Step-by-step notebook guide |
-| [Extending](docs/guides/extending.md) | Add custom effects and analyzers |
-
----
-
-## 🏗️ Project Structure
-
-```
-soundlab/
-├── packages/soundlab/src/soundlab/
-│   ├── analysis/      # Tempo, key, loudness, spectral
-│   ├── effects/       # EQ, dynamics, time-based, creative
-│   ├── separation/    # Demucs stem separation
-│   ├── transcription/ # Basic Pitch audio-to-MIDI
-│   ├── voice/         # TTS (XTTS-v2) and SVC (RVC)
-│   ├── pipeline/      # Orchestration and QA
-│   └── utils/         # GPU, logging, retry, progress
-├── notebooks/         # Colab notebook and examples
-├── tests/             # Unit and integration tests
-└── docs/              # Documentation
-```
-
----
-
-## 🧪 Development
+## Development
 
 ```bash
-# Clone and install
-git clone https://github.com/wyattowalsh/soundlab.git
-cd soundlab
-uv sync --dev
-
-# Run tests
-uv run pytest tests/ -v
-
-# Format and lint
-uv run ruff format .
+uv run ruff format --check .
 uv run ruff check .
-
-# Type check
 uv run ty check packages/soundlab/src
+uv run pytest tests/ -m "not slow and not gpu"
 ```
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for full guidelines.
+See [CONTRIBUTING.md](CONTRIBUTING.md), [SECURITY.md](SECURITY.md), and [AGENTS.md](AGENTS.md).
 
----
+## Evidence and release status
 
-## 📄 License
+SoundLab is an actively consolidated beta project. Static checks, local tests, managed-Colab execution, frontend rendering, external services, and perceptual review are separate evidence classes. Release notes must state exactly which checks ran on which artifact and environment.
 
-[MIT License](LICENSE) © Wyatt Walsh
+No PyPI publication is currently enabled. Package builds are retained for installation testing only.
 
----
+## License
 
-<div align="center">
-
-**[⬆ Back to Top](#-soundlab)**
-
-</div>
+SoundLab code is available under the [MIT License](LICENSE). Third-party model weights and services retain their own terms.
