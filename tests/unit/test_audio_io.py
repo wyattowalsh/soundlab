@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -10,6 +9,8 @@ import pytest
 np = pytest.importorskip("numpy")
 pytest.importorskip("pydantic")
 
+
+from typing import TYPE_CHECKING
 
 from soundlab.core.audio import AudioFormat, AudioSegment, BitDepth
 from soundlab.core.exceptions import AudioFormatError, AudioLoadError
@@ -23,6 +24,9 @@ from soundlab.io.audio_io import (
     load_audio,
     save_audio,
 )
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 # --------------------------------------------------------------------------- #
 # Fixtures
@@ -747,9 +751,7 @@ class TestSaveAudioPydubFallback:
 
         assert exc_info.value.__cause__ is soundfile_error
 
-    def test_soundfile_success_preserves_out_of_range_samples(
-        self, tmp_path: Path
-    ) -> None:
+    def test_soundfile_success_preserves_out_of_range_samples(self, tmp_path: Path) -> None:
         """A successful soundfile write receives the original samples."""
         wav_path = tmp_path / "output.wav"
         samples = np.array([1.5, -1.5], dtype=np.float32)

@@ -22,8 +22,7 @@ def _load_crepe() -> Any:
         return importlib.import_module("crepe")
     except Exception as exc:  # pragma: no cover - optional dependency
         raise ImportError(
-            "crepe is required for CREPE-based transcription. "
-            "Install it with: pip install crepe"
+            "crepe is required for CREPE-based transcription. Install it with: pip install crepe"
         ) from exc
 
 
@@ -33,8 +32,7 @@ def _load_librosa() -> Any:
         return importlib.import_module("librosa")
     except Exception as exc:  # pragma: no cover - optional dependency
         raise ImportError(
-            "librosa is required for onset detection. "
-            "Install it with: pip install librosa"
+            "librosa is required for onset detection. Install it with: pip install librosa"
         ) from exc
 
 
@@ -181,9 +179,7 @@ class CREPETranscriber:
 
         return weighted_freq, mean_confidence
 
-    def transcribe(
-        self, audio_path: str | Path, output_dir: str | Path
-    ) -> MIDIResult:
+    def transcribe(self, audio_path: str | Path, output_dir: str | Path) -> MIDIResult:
         """Transcribe audio to MIDI with full result details.
 
         Args:
@@ -235,19 +231,14 @@ class CREPETranscriber:
 
         for i, onset in enumerate(onset_times):
             # Determine end time (next onset or end of audio)
-            if i + 1 < len(onset_times):
-                note_end = float(onset_times[i + 1])
-            else:
-                note_end = duration
+            note_end = float(onset_times[i + 1]) if i + 1 < len(onset_times) else duration
 
             # Apply minimum note length constraint
             if note_end - float(onset) < self.config.min_note_length:
                 continue
 
             # Estimate pitch for this region
-            freq, confidence = self._estimate_pitch_for_region(
-                y, sr, float(onset), note_end, crepe
-            )
+            freq, confidence = self._estimate_pitch_for_region(y, sr, float(onset), note_end, crepe)
 
             # frame_thresh is the confidence gate for this backend.
             if freq <= 0 or confidence < self.config.frame_thresh:

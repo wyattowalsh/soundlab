@@ -45,8 +45,8 @@ Leave `enable_drive_cache` off for a local session. Turn it on only when you wan
 ### Environment
 
 ```python
-gpu_mode = "auto"      # "auto", "force_gpu", "force_cpu"
-log_level = "INFO"     # "DEBUG", "INFO", "WARNING", "ERROR"
+gpu_mode = "auto"  # "auto", "force_gpu", "force_cpu"
+log_level = "INFO"  # "DEBUG", "INFO", "WARNING", "ERROR"
 output_base = "/content/soundlab_outputs"
 deterministic = False
 random_seed = 42
@@ -72,9 +72,9 @@ The upload cell accepts WAV, MP3, FLAC, OGG, AIFF, and M4A. It shows duration, s
 
 ```python
 target_sample_rate = 44100
-target_channels = 2          # 1 or 2
+target_channels = 2  # 1 or 2
 normalize_audio = False
-normalization_level = -1.0   # peak level in dB, used when normalize_audio is true
+normalization_level = -1.0  # peak level in dB, used when normalize_audio is true
 ```
 
 `normalization_level` is the peak target in dB. Normalization runs only when `normalize_audio` is true.
@@ -96,11 +96,11 @@ Set `use_excerpt` false to keep the full track. Set `auto_select_excerpt` true t
 
 ```python
 separation_model = "htdemucs_ft"  # htdemucs, htdemucs_ft, htdemucs_6s, mdx_extra, mdx_extra_q
-two_stems = "none"                # none, vocals, drums, bass, other
+two_stems = "none"  # none, vocals, drums, bass, other
 segment_length = 7.8
 overlap = 0.25
 shifts = 1
-output_format = "wav"             # wav, mp3, flac
+output_format = "wav"  # wav, mp3, flac
 mp3_bitrate = 320
 float32_output = True
 ```

@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-from typing import Any
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -12,8 +10,12 @@ import pytest
 pytest.importorskip("pydantic")
 pydantic = pytest.importorskip("pydantic")
 
+from typing import TYPE_CHECKING
+
 from soundlab.transcription.models import DrumTranscriptionConfig
 
+if TYPE_CHECKING:
+    from pathlib import Path
 
 # --------------------------------------------------------------------------- #
 # DrumTranscriptionConfig Tests
@@ -176,7 +178,11 @@ class TestDrumTranscriber:
         with (
             patch.dict(
                 "sys.modules",
-                {"librosa": mock_librosa, "librosa.onset": mock_librosa.onset, "librosa.feature": mock_librosa.feature},
+                {
+                    "librosa": mock_librosa,
+                    "librosa.onset": mock_librosa.onset,
+                    "librosa.feature": mock_librosa.feature,
+                },
             ),
             patch("soundlab.transcription.drum_backend._load_librosa", return_value=mock_librosa),
             patch("soundlab.transcription.drum_backend.detect_onsets", mock_detect_onsets),
@@ -258,9 +264,7 @@ class TestDrumTranscriber:
         assert _classify_drum_hit(400.0, config) == config.snare_pitch
         assert _classify_drum_hit(800.0, config) == config.hihat_pitch
 
-    def test_drum_transcriber_empty_onsets(
-        self, mock_librosa: MagicMock, tmp_path: Path
-    ) -> None:
+    def test_drum_transcriber_empty_onsets(self, mock_librosa: MagicMock, tmp_path: Path) -> None:
         """DrumTranscriber should handle empty onset detection."""
         from soundlab.transcription.drum_backend import DrumTranscriber
 
@@ -344,7 +348,9 @@ class TestCREPETranscriber:
 
         result = _freq_to_midi(frequency)
         # Allow for rounding differences (within 1 MIDI note)
-        assert abs(result - expected_midi) <= 1, f"freq={frequency}, got {result}, expected {expected_midi}"
+        assert abs(result - expected_midi) <= 1, (
+            f"freq={frequency}, got {result}, expected {expected_midi}"
+        )
 
     def test_crepe_frequency_to_midi_specific_values(self) -> None:
         """Test specific frequency to MIDI conversions."""
@@ -402,8 +408,13 @@ class TestCREPETranscriber:
         output_dir = tmp_path / "output"
 
         with (
-            patch("soundlab.transcription.crepe_backend._load_crepe", return_value=mock_crepe_module),
-            patch("soundlab.transcription.crepe_backend._load_librosa", return_value=mock_librosa_for_crepe),
+            patch(
+                "soundlab.transcription.crepe_backend._load_crepe", return_value=mock_crepe_module
+            ),
+            patch(
+                "soundlab.transcription.crepe_backend._load_librosa",
+                return_value=mock_librosa_for_crepe,
+            ),
             patch("soundlab.transcription.crepe_backend.save_midi") as mock_save_midi,
         ):
             config = TranscriptionConfig()
@@ -435,8 +446,13 @@ class TestCREPETranscriber:
         output_dir = tmp_path / "output"
 
         with (
-            patch("soundlab.transcription.crepe_backend._load_crepe", return_value=mock_crepe_module),
-            patch("soundlab.transcription.crepe_backend._load_librosa", return_value=mock_librosa_for_crepe),
+            patch(
+                "soundlab.transcription.crepe_backend._load_crepe", return_value=mock_crepe_module
+            ),
+            patch(
+                "soundlab.transcription.crepe_backend._load_librosa",
+                return_value=mock_librosa_for_crepe,
+            ),
             patch("soundlab.transcription.crepe_backend.save_midi"),
         ):
             transcriber = CREPETranscriber()
@@ -461,8 +477,13 @@ class TestCREPETranscriber:
         output_dir = tmp_path / "output"
 
         with (
-            patch("soundlab.transcription.crepe_backend._load_crepe", return_value=mock_crepe_module),
-            patch("soundlab.transcription.crepe_backend._load_librosa", return_value=mock_librosa_for_crepe),
+            patch(
+                "soundlab.transcription.crepe_backend._load_crepe", return_value=mock_crepe_module
+            ),
+            patch(
+                "soundlab.transcription.crepe_backend._load_librosa",
+                return_value=mock_librosa_for_crepe,
+            ),
             patch("soundlab.transcription.crepe_backend.save_midi"),
         ):
             transcriber = CREPETranscriber()
@@ -507,11 +528,9 @@ class TestCREPETranscriber:
         assert result.ndim == 1
         assert len(result) == 1000
 
-
-# --------------------------------------------------------------------------- #
-# Shared Helper Tests
-# --------------------------------------------------------------------------- #
-
+    # --------------------------------------------------------------------------- #
+    # Shared Helper Tests
+    # --------------------------------------------------------------------------- #
 
     def test_crepe_honors_onset_and_frame_thresholds(
         self,
@@ -528,7 +547,9 @@ class TestCREPETranscriber:
         config = TranscriptionConfig(onset_thresh=0.7, frame_thresh=0.9)
 
         with (
-            patch("soundlab.transcription.crepe_backend._load_crepe", return_value=mock_crepe_module),
+            patch(
+                "soundlab.transcription.crepe_backend._load_crepe", return_value=mock_crepe_module
+            ),
             patch(
                 "soundlab.transcription.crepe_backend._load_librosa",
                 return_value=mock_librosa_for_crepe,
@@ -580,9 +601,13 @@ class TestTranscriptionBackendHelpers:
 class TestTranscriptionBackendIntegration:
     """Integration-style tests with fully mocked dependencies."""
 
-    def test_drum_transcriber_full_pipeline(self, tmp_path: Path) -> None:
+    def test_drum_transcriber_full_pipeline(self) -> None:
         """Test full drum transcription pipeline with mocks."""
-        from soundlab.transcription.drum_backend import DrumConfig, DrumTranscriber, _normalize_strengths_to_velocities, _classify_drum_hit
+        from soundlab.transcription.drum_backend import (
+            DrumConfig,
+            _classify_drum_hit,
+            _normalize_strengths_to_velocities,
+        )
 
         # Test the helper functions work correctly together
         config = DrumConfig()
@@ -604,7 +629,7 @@ class TestTranscriptionBackendIntegration:
         assert pitches[2] == config.hihat_pitch  # High = hihat
         assert pitches[3] == config.kick_pitch  # Low = kick
 
-    def test_crepe_transcriber_config_preserved(self, tmp_path: Path) -> None:
+    def test_crepe_transcriber_config_preserved(self) -> None:
         """Test that CREPE transcriber preserves config in result."""
         from soundlab.transcription.crepe_backend import CREPETranscriber
         from soundlab.transcription.models import TranscriptionConfig

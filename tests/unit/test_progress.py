@@ -4,8 +4,7 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-import pytest  # noqa: I001
-
+import pytest
 
 # ---------------------------------------------------------------------------
 # TestClampProgress
@@ -128,7 +127,7 @@ class TestGradioProgressCallback:
         from soundlab.utils.progress import GradioProgressCallback
 
         # First call with desc raises TypeError, fallback should call without desc
-        def side_effect_fn(value, desc=None):
+        def side_effect_fn(_value, desc=None):
             if desc is not None:
                 raise TypeError("unexpected keyword argument 'desc'")
 

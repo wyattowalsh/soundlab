@@ -2,15 +2,16 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 np = pytest.importorskip("numpy")
 
+from typing import TYPE_CHECKING
+
 from soundlab.analysis.onsets import OnsetResult
-from soundlab.io.midi_io import MIDIData, MIDINote, load_midi
+from soundlab.io.midi_io import MIDIData, load_midi
 from soundlab.transcription.drum_backend import (
     DRUM_HIHAT_CLOSED,
     DRUM_KICK,
@@ -19,6 +20,9 @@ from soundlab.transcription.drum_backend import (
     DrumTranscriber,
 )
 from soundlab.transcription.models import MIDIResult
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -49,7 +53,7 @@ def mock_librosa() -> MagicMock:
     # time_to_frames should return a scalar when given a scalar onset_time
     # Use side_effect to return sequential frame indices
     frame_indices = iter([0, 1, 2, 3, 4, 0, 1, 2, 3, 4])  # Extra for multiple calls
-    mock.time_to_frames.side_effect = lambda onset_time, sr, hop_length: next(frame_indices, 0)
+    mock.time_to_frames.side_effect = lambda _onset_time, _sr, _hop_length: next(frame_indices, 0)
     # Mock spectral centroid to return different values for different calls
     # This allows testing classification into different drum types
     mock.feature.spectral_centroid.return_value = np.array([[500.0]])
@@ -175,7 +179,11 @@ class TestDrumTranscriptionIntegration:
             assert abs(actual_duration - expected_duration) < 0.01
 
         # Verify pitches are from custom config (one of kick, snare, or hihat)
-        valid_pitches = {custom_config.kick_pitch, custom_config.snare_pitch, custom_config.hihat_pitch}
+        valid_pitches = {
+            custom_config.kick_pitch,
+            custom_config.snare_pitch,
+            custom_config.hihat_pitch,
+        }
         for note in result.notes:
             assert note.pitch in valid_pitches
 
@@ -296,7 +304,7 @@ class TestDrumTranscriptionIntegration:
         assert midi_data.tempo > 0
 
         # Verify loaded notes match transcribed notes
-        for loaded_note, original_note in zip(midi_data.notes, result.notes):
+        for loaded_note, original_note in zip(midi_data.notes, result.notes, strict=False):
             assert loaded_note.pitch == original_note.pitch
             assert loaded_note.velocity == original_note.velocity
             # Timing may have slight float differences due to tick conversion

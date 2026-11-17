@@ -187,13 +187,12 @@ def benchmark_transcription(audio_path: Path) -> list[BenchmarkResult]:
     except ImportError as exc:
         return [BenchmarkResult("transcription", "get_transcriber", 0, notes=f"Failed: {exc}")]
 
-    with tempfile.TemporaryDirectory() as tmpdir:
-        with timer() as t:
-            try:
-                result = transcriber.transcribe(audio_path, Path(tmpdir))
-                notes = f"{len(result.notes)} notes"
-            except Exception as e:
-                notes = f"Failed: {e}"
+    with tempfile.TemporaryDirectory() as tmpdir, timer() as t:
+        try:
+            result = transcriber.transcribe(audio_path, Path(tmpdir))
+            notes = f"{len(result.notes)} notes"
+        except Exception as e:
+            notes = f"Failed: {e}"
 
     results.append(
         BenchmarkResult(
@@ -213,11 +212,11 @@ def benchmark_analysis(audio_path: Path) -> list[BenchmarkResult]:
 
     try:
         from soundlab.analysis import (
-            measure_loudness,
             analyze_spectral,
             detect_key,
             detect_onsets,
             detect_tempo,
+            measure_loudness,
         )
         from soundlab.io import load_audio
     except ImportError:

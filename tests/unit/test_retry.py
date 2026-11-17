@@ -2,15 +2,16 @@
 
 from __future__ import annotations
 
-import pytest
 from unittest.mock import MagicMock, patch
+
+import pytest
 
 tenacity = pytest.importorskip("tenacity")
 httpx = pytest.importorskip("httpx")
 
 from tenacity import RetryError
 
-from soundlab.utils.retry import gpu_retry, io_retry, network_retry
+from soundlab.utils.retry import io_retry, network_retry
 
 
 class TestRetryIO:
@@ -25,7 +26,7 @@ class TestRetryIO:
             nonlocal call_count
             call_count += 1
             if call_count < 3:
-                raise IOError("Temporary failure")
+                raise OSError("Temporary failure")
             return "success"
 
         result = flaky_io()
@@ -76,7 +77,7 @@ class TestRetryIO:
             def always_fails() -> str:
                 nonlocal call_count
                 call_count += 1
-                raise IOError("Persistent failure")
+                raise OSError("Persistent failure")
 
             with pytest.raises(RetryError) as exc_info:
                 always_fails()
@@ -102,7 +103,7 @@ class TestRetryIO:
                 nonlocal call_count
                 call_count += 1
                 if call_count < 3:
-                    raise IOError("Temporary failure")
+                    raise OSError("Temporary failure")
                 return "success"
 
             result = flaky_io()
@@ -136,7 +137,6 @@ class TestRetryOOM:
 
     def test_clears_cuda_cache_on_oom(self) -> None:
         """Clears CUDA cache on OOM error."""
-        call_count = 0
 
         with patch("soundlab.utils.retry.torch") as mock_torch:
             mock_torch.cuda.is_available.return_value = True
@@ -181,33 +181,32 @@ class TestRetryOOM:
         class MockOOMError(RuntimeError):
             pass
 
-        with patch("soundlab.utils.retry._oom_error", MockOOMError):
-            with patch("time.sleep"):
-                # Re-create the decorator with our mock error
-                from tenacity import (
-                    retry,
-                    retry_if_exception_type,
-                    stop_after_attempt,
-                    wait_exponential,
-                )
+        with patch("soundlab.utils.retry._oom_error", MockOOMError), patch("time.sleep"):
+            # Re-create the decorator with our mock error
+            from tenacity import (
+                retry,
+                retry_if_exception_type,
+                stop_after_attempt,
+                wait_exponential,
+            )
 
-                test_gpu_retry = retry(
-                    stop=stop_after_attempt(2),
-                    wait=wait_exponential(multiplier=2, min=5, max=60),
-                    retry=retry_if_exception_type(MockOOMError),
-                )
+            test_gpu_retry = retry(
+                stop=stop_after_attempt(2),
+                wait=wait_exponential(multiplier=2, min=5, max=60),
+                retry=retry_if_exception_type(MockOOMError),
+            )
 
-                @test_gpu_retry
-                def flaky_gpu() -> str:
-                    nonlocal call_count
-                    call_count += 1
-                    if call_count < 2:
-                        raise MockOOMError("CUDA out of memory")
-                    return "success"
+            @test_gpu_retry
+            def flaky_gpu() -> str:
+                nonlocal call_count
+                call_count += 1
+                if call_count < 2:
+                    raise MockOOMError("CUDA out of memory")
+                return "success"
 
-                result = flaky_gpu()
-                assert result == "success"
-                assert call_count == 2
+            result = flaky_gpu()
+            assert result == "success"
+            assert call_count == 2
 
     def test_max_retries_on_persistent_oom(self) -> None:
         """Stops after max retries on persistent OOM."""
@@ -434,7 +433,7 @@ class TestRetryIntegration:
                 nonlocal call_count
                 call_count += 1
                 if call_count < 2:
-                    raise IOError("Temporary")
+                    raise OSError("Temporary")
                 return {"x": x, "y": y, "z": z}
 
             result = flaky_with_args(42, "hello", z=False)
@@ -452,7 +451,7 @@ class TestRetryIntegration:
                 nonlocal call_count
                 call_count += 1
                 if call_count < 2:
-                    raise IOError("Temporary")
+                    raise OSError("Temporary")
                 return (i for i in range(3))
 
             result = list(flaky_generator())

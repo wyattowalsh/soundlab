@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -11,8 +10,13 @@ import soundfile as sf
 np = pytest.importorskip("numpy")
 torch = pytest.importorskip("torch")
 
+from typing import TYPE_CHECKING
+
 from soundlab.core.exceptions import ProcessingError
 from soundlab.separation import DemucsModel, SeparationConfig, StemResult, StemSeparator
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 # ---------------------------------------------------------------------------
 # Fixtures

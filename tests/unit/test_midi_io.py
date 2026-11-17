@@ -177,8 +177,8 @@ class TestLoadMidi:
         mock_mido.merge_tracks.return_value = [tempo_msg, note_on_msg, note_off_msg]
         mock_mido.bpm2tempo.return_value = 500000
         mock_mido.tempo2bpm.return_value = 120.0
-        mock_mido.tick2second.side_effect = (
-            lambda ticks, tpb, tempo: ticks / tpb * (tempo / 1000000)
+        mock_mido.tick2second.side_effect = lambda ticks, tpb, tempo: (
+            ticks / tpb * (tempo / 1000000)
         )
 
         with patch("soundlab.io.midi_io.importlib.import_module", return_value=mock_mido):
@@ -262,8 +262,8 @@ class TestLoadMidiEdgeCases:
         mock_mido.merge_tracks.return_value = messages
         mock_mido.bpm2tempo.return_value = 500000  # 120 BPM
         mock_mido.tempo2bpm.return_value = 120.0
-        mock_mido.tick2second.side_effect = (
-            lambda ticks, tpb, tempo: ticks / tpb * (tempo / 1_000_000)
+        mock_mido.tick2second.side_effect = lambda ticks, tpb, tempo: (
+            ticks / tpb * (tempo / 1_000_000)
         )
         return mock_mido
 
@@ -672,7 +672,7 @@ class TestSaveMidiEdgeCases:
         mock_mido.MidiTrack.return_value = mock_track
         mock_mido.bpm2tempo.return_value = 500000
         # Return 0 for start, 480 for end
-        mock_mido.second2tick.side_effect = lambda s, tpb, tempo: 0 if s <= 0 else 480
+        mock_mido.second2tick.side_effect = lambda s, _tpb, _tempo: 0 if s <= 0 else 480
         mock_mido.MetaMessage.return_value = MagicMock(time=0)
 
         note_on_msg = MagicMock(type="note_on", time=0)

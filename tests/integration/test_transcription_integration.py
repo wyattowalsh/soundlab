@@ -2,15 +2,19 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 np = pytest.importorskip("numpy")
 
+from typing import TYPE_CHECKING
+
 from soundlab.transcription import MIDIResult, MIDITranscriber, TranscriptionConfig
 from soundlab.transcription.models import NoteEvent
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 # ---------------------------------------------------------------------------
 # Fixtures

@@ -366,41 +366,49 @@ from __future__ import annotations
 
 class SoundLabError(Exception):
     """Base exception for all SoundLab errors."""
+
     pass
 
 
 class AudioLoadError(SoundLabError):
     """Failed to load audio file."""
+
     pass
 
 
 class AudioFormatError(SoundLabError):
     """Unsupported or invalid audio format."""
+
     pass
 
 
 class ModelNotFoundError(SoundLabError):
     """Required model not available."""
+
     pass
 
 
 class GPUMemoryError(SoundLabError):
     """Insufficient GPU memory for operation."""
+
     pass
 
 
 class ProcessingError(SoundLabError):
     """Error during audio processing."""
+
     pass
 
 
 class ConfigurationError(SoundLabError):
     """Invalid configuration."""
+
     pass
 
 
 class VoiceConversionError(SoundLabError):
     """Error in voice conversion pipeline."""
+
     pass
 ```
 
@@ -423,23 +431,23 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 class AudioFormat(StrEnum):
     """Supported audio formats."""
-    
-    WAV  = "wav"
-    MP3  = "mp3"
+
+    WAV = "wav"
+    MP3 = "mp3"
     FLAC = "flac"
-    OGG  = "ogg"
+    OGG = "ogg"
     AIFF = "aiff"
-    M4A  = "m4a"
+    M4A = "m4a"
 
 
 class SampleRate(StrEnum):
     """Common sample rates."""
-    
+
     SR_22050 = "22050"
     SR_44100 = "44100"
     SR_48000 = "48000"
     SR_96000 = "96000"
-    
+
     @property
     def hz(self) -> int:
         return int(self.value)
@@ -447,7 +455,7 @@ class SampleRate(StrEnum):
 
 class BitDepth(StrEnum):
     """Audio bit depths."""
-    
+
     INT16 = "16"
     INT24 = "24"
     FLOAT32 = "32"
@@ -455,25 +463,25 @@ class BitDepth(StrEnum):
 
 class AudioMetadata(BaseModel):
     """Metadata for an audio file."""
-    
+
     model_config = ConfigDict(frozen=True)
-    
+
     duration_seconds: Annotated[float, Field(ge=0)]
     sample_rate: int
     channels: Annotated[int, Field(ge=1, le=8)]
     bit_depth: BitDepth | None = None
     format: AudioFormat | None = None
-    
+
     @property
     def duration_str(self) -> str:
         """Human-readable duration (MM:SS.ms)."""
         mins, secs = divmod(self.duration_seconds, 60)
         return f"{int(mins):02d}:{secs:05.2f}"
-    
+
     @property
     def is_stereo(self) -> bool:
         return self.channels == 2
-    
+
     @property
     def is_mono(self) -> bool:
         return self.channels == 1
@@ -481,31 +489,31 @@ class AudioMetadata(BaseModel):
 
 class AudioSegment(BaseModel):
     """In-memory audio representation."""
-    
+
     model_config = ConfigDict(arbitrary_types_allowed=True)
-    
+
     samples: NDArray[np.float32]
     sample_rate: int
     source_path: Path | None = None
     metadata: AudioMetadata | None = None
-    
+
     @field_validator("samples", mode="before")
     @classmethod
     def ensure_float32(cls, v: NDArray) -> NDArray[np.float32]:
         if v.dtype != np.float32:
             return v.astype(np.float32)
         return v
-    
+
     @property
     def duration_seconds(self) -> float:
         return len(self.samples) / self.sample_rate
-    
+
     @property
     def channels(self) -> int:
         if self.samples.ndim == 1:
             return 1
         return self.samples.shape[0]
-    
+
     def to_mono(self) -> "AudioSegment":
         """Convert to mono by averaging channels."""
         if self.channels == 1:
@@ -535,17 +543,17 @@ from pydantic import BaseModel, ConfigDict, Field
 
 class DemucsModel(StrEnum):
     """Available Demucs models."""
-    
-    HTDEMUCS      = "htdemucs"       # Hybrid Transformer, 4 stems
-    HTDEMUCS_FT   = "htdemucs_ft"    # Fine-tuned, best quality
-    HTDEMUCS_6S   = "htdemucs_6s"    # 6 stems (piano unreliable)
-    MDX_EXTRA     = "mdx_extra"       # MDX architecture
-    MDX_EXTRA_Q   = "mdx_extra_q"     # Quantized MDX
-    
+
+    HTDEMUCS = "htdemucs"  # Hybrid Transformer, 4 stems
+    HTDEMUCS_FT = "htdemucs_ft"  # Fine-tuned, best quality
+    HTDEMUCS_6S = "htdemucs_6s"  # 6 stems (piano unreliable)
+    MDX_EXTRA = "mdx_extra"  # MDX architecture
+    MDX_EXTRA_Q = "mdx_extra_q"  # Quantized MDX
+
     @property
     def stem_count(self) -> int:
         return 6 if self == DemucsModel.HTDEMUCS_6S else 4
-    
+
     @property
     def stems(self) -> list[str]:
         base = ["vocals", "drums", "bass", "other"]
@@ -556,41 +564,41 @@ class DemucsModel(StrEnum):
 
 class SeparationConfig(BaseModel):
     """Configuration for stem separation."""
-    
+
     model_config = ConfigDict(frozen=True)
-    
+
     model: DemucsModel = DemucsModel.HTDEMUCS_FT
-    
+
     # Processing parameters
     segment_length: Annotated[float, Field(ge=1.0, le=30.0)] = 7.8
     overlap: Annotated[float, Field(ge=0.1, le=0.9)] = 0.25
     shifts: Annotated[int, Field(ge=0, le=5)] = 1
-    
+
     # Output options
     two_stems: str | None = None  # "vocals", "drums", "bass", "other"
     float32: bool = False
     int24: bool = True
     mp3_bitrate: Annotated[int, Field(ge=128, le=320)] = 320
-    
+
     # Resource management
     device: str = "auto"  # "auto", "cuda", "cpu"
-    split: bool = True    # Enable segment-based processing for long audio
+    split: bool = True  # Enable segment-based processing for long audio
 
 
 class StemResult(BaseModel):
     """Result from stem separation."""
-    
+
     model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
-    
-    stems: dict[str, Path]           # stem_name -> file_path
+
+    stems: dict[str, Path]  # stem_name -> file_path
     source_path: Path
     config: SeparationConfig
     processing_time_seconds: float
-    
+
     @property
     def vocals(self) -> Path | None:
         return self.stems.get("vocals")
-    
+
     @property
     def instrumental(self) -> Path | None:
         """Combined non-vocal stems (computed on demand)."""
@@ -623,11 +631,11 @@ if TYPE_CHECKING:
 
 class StemSeparator:
     """High-level interface for stem separation using Demucs."""
-    
+
     def __init__(self, config: SeparationConfig | None = None) -> None:
         """
         Initialize the stem separator.
-        
+
         Parameters
         ----------
         config
@@ -636,33 +644,33 @@ class StemSeparator:
         self.config = config or SeparationConfig()
         self._model = None
         self._device = None
-    
+
     def _load_model(self) -> None:
         """Lazy-load the Demucs model."""
         if self._model is not None:
             return
-        
+
         from demucs.pretrained import get_model
-        
+
         self._device = get_device(self.config.device)
         logger.info(f"Loading Demucs model: {self.config.model} on {self._device}")
-        
+
         try:
             self._model = get_model(self.config.model.value)
             self._model.to(self._device)
             self._model.eval()
         except Exception as e:
             raise ModelNotFoundError(f"Failed to load {self.config.model}: {e}") from e
-    
+
     def _check_memory(self, duration_seconds: float) -> None:
         """Verify sufficient GPU memory for processing."""
         if self._device == "cpu":
             return
-        
+
         # Rough estimate: ~2GB base + 0.5GB per minute
         estimated_gb = 2.0 + (duration_seconds / 60) * 0.5
         free_gb = get_free_vram_gb()
-        
+
         if free_gb < estimated_gb:
             logger.warning(
                 f"Low VRAM: {free_gb:.1f}GB free, ~{estimated_gb:.1f}GB needed. "
@@ -670,10 +678,9 @@ class StemSeparator:
             )
             if free_gb < 2.0:
                 raise GPUMemoryError(
-                    f"Insufficient VRAM ({free_gb:.1f}GB). "
-                    "Use config.split=True or device='cpu'."
+                    f"Insufficient VRAM ({free_gb:.1f}GB). Use config.split=True or device='cpu'."
                 )
-    
+
     @retry(
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=2, max=30),
@@ -687,7 +694,7 @@ class StemSeparator:
     ) -> StemResult:
         """
         Separate audio into stems.
-        
+
         Parameters
         ----------
         audio_path
@@ -696,12 +703,12 @@ class StemSeparator:
             Directory to save separated stems.
         progress_callback
             Optional callback for progress updates.
-        
+
         Returns
         -------
         StemResult
             Paths to separated stem files and metadata.
-        
+
         Raises
         ------
         AudioLoadError
@@ -710,7 +717,7 @@ class StemSeparator:
             If insufficient GPU memory is available.
         ProcessingError
             If separation fails.
-        
+
         Examples
         --------
         >>> separator = StemSeparator()
@@ -720,15 +727,15 @@ class StemSeparator:
         """
         from demucs.apply import apply_model
         from demucs.audio import AudioFile
-        
+
         audio_path = Path(audio_path)
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
-        
+
         self._load_model()
-        
+
         start_time = time.perf_counter()
-        
+
         # Load audio
         logger.info(f"Loading audio: {audio_path}")
         wav = AudioFile(audio_path).read(
@@ -737,12 +744,12 @@ class StemSeparator:
             channels=self._model.audio_channels,
         )
         wav = wav.to(self._device)
-        
+
         self._check_memory(wav.shape[-1] / self._model.samplerate)
-        
+
         # Apply model
         logger.info(f"Separating with {self.config.model}...")
-        
+
         with torch.no_grad():
             sources = apply_model(
                 self._model,
@@ -752,38 +759,38 @@ class StemSeparator:
                 shifts=self.config.shifts,
                 progress=progress_callback is not None,
             )[0]
-        
+
         # Save stems
         stems = {}
         stem_names = self.config.model.stems
-        
+
         if self.config.two_stems:
             stem_names = [self.config.two_stems, "no_" + self.config.two_stems]
-        
+
         for i, stem_name in enumerate(stem_names):
             stem_path = output_dir / f"{stem_name}.wav"
             self._save_stem(sources[i], stem_path)
             stems[stem_name] = stem_path
             logger.debug(f"Saved: {stem_path}")
-        
+
         processing_time = time.perf_counter() - start_time
         logger.info(f"Separation complete in {processing_time:.1f}s")
-        
+
         return StemResult(
             stems=stems,
             source_path=audio_path,
             config=self.config,
             processing_time_seconds=processing_time,
         )
-    
+
     def _save_stem(self, tensor: torch.Tensor, path: Path) -> None:
         """Save a stem tensor to file."""
         import soundfile as sf
-        
+
         audio = tensor.cpu().numpy()
         if audio.ndim == 2:
             audio = audio.T  # (channels, samples) -> (samples, channels)
-        
+
         subtype = "PCM_24" if self.config.int24 else "FLOAT" if self.config.float32 else "PCM_16"
         sf.write(path, audio, self._model.samplerate, subtype=subtype)
 ```
@@ -806,24 +813,24 @@ from numpy.typing import NDArray
 
 class MusicalKey(StrEnum):
     """Musical key names."""
-    
-    C  = "C"
+
+    C = "C"
     Cs = "C#"
-    D  = "D"
+    D = "D"
     Ds = "D#"
-    E  = "E"
-    F  = "F"
+    E = "E"
+    F = "F"
     Fs = "F#"
-    G  = "G"
+    G = "G"
     Gs = "G#"
-    A  = "A"
+    A = "A"
     As = "A#"
-    B  = "B"
+    B = "B"
 
 
 class Mode(StrEnum):
     """Musical mode."""
-    
+
     MAJOR = "major"
     MINOR = "minor"
 
@@ -831,44 +838,52 @@ class Mode(StrEnum):
 @dataclass(frozen=True)
 class KeyDetectionResult:
     """Result of key detection analysis."""
-    
+
     key: MusicalKey
     mode: Mode
     confidence: float
     all_correlations: dict[str, float]
-    
+
     @property
     def name(self) -> str:
         """Full key name (e.g., 'A minor')."""
         return f"{self.key.value} {self.mode.value}"
-    
+
     @property
     def camelot(self) -> str:
         """Camelot notation for DJ mixing."""
         camelot_map = {
-            ("C", "major"): "8B", ("A", "minor"): "8A",
-            ("G", "major"): "9B", ("E", "minor"): "9A",
-            ("D", "major"): "10B", ("B", "minor"): "10A",
-            ("A", "major"): "11B", ("F#", "minor"): "11A",
-            ("E", "major"): "12B", ("C#", "minor"): "12A",
-            ("B", "major"): "1B", ("G#", "minor"): "1A",
-            ("F#", "major"): "2B", ("D#", "minor"): "2A",
-            ("C#", "major"): "3B", ("A#", "minor"): "3A",
-            ("G#", "major"): "4B", ("F", "minor"): "4A",
-            ("D#", "major"): "5B", ("C", "minor"): "5A",
-            ("A#", "major"): "6B", ("G", "minor"): "6A",
-            ("F", "major"): "7B", ("D", "minor"): "7A",
+            ("C", "major"): "8B",
+            ("A", "minor"): "8A",
+            ("G", "major"): "9B",
+            ("E", "minor"): "9A",
+            ("D", "major"): "10B",
+            ("B", "minor"): "10A",
+            ("A", "major"): "11B",
+            ("F#", "minor"): "11A",
+            ("E", "major"): "12B",
+            ("C#", "minor"): "12A",
+            ("B", "major"): "1B",
+            ("G#", "minor"): "1A",
+            ("F#", "major"): "2B",
+            ("D#", "minor"): "2A",
+            ("C#", "major"): "3B",
+            ("A#", "minor"): "3A",
+            ("G#", "major"): "4B",
+            ("F", "minor"): "4A",
+            ("D#", "major"): "5B",
+            ("C", "minor"): "5A",
+            ("A#", "major"): "6B",
+            ("G", "minor"): "6A",
+            ("F", "major"): "7B",
+            ("D", "minor"): "7A",
         }
         return camelot_map.get((self.key.value, self.mode.value), "?")
 
 
 # Krumhansl-Schmuckler key profiles (normalized)
-_MAJOR_PROFILE = np.array([
-    6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88
-])
-_MINOR_PROFILE = np.array([
-    6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17
-])
+_MAJOR_PROFILE = np.array([6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88])
+_MINOR_PROFILE = np.array([6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17])
 
 
 def detect_key(
@@ -879,7 +894,7 @@ def detect_key(
 ) -> KeyDetectionResult:
     """
     Detect the musical key using the Krumhansl-Schmuckler algorithm.
-    
+
     Parameters
     ----------
     y
@@ -888,12 +903,12 @@ def detect_key(
         Sample rate.
     hop_length
         Hop length for chroma computation.
-    
+
     Returns
     -------
     KeyDetectionResult
         Detected key, mode, and confidence score.
-    
+
     Examples
     --------
     >>> y, sr = librosa.load("song.mp3", sr=22050, mono=True)
@@ -905,45 +920,45 @@ def detect_key(
     """
     # Compute chroma features using CQT for better frequency resolution
     chroma = librosa.feature.chroma_cqt(y=y, sr=sr, hop_length=hop_length)
-    
+
     # Average across time to get pitch class distribution
     chroma_avg = np.mean(chroma, axis=1)
-    
+
     # Normalize
     chroma_avg = chroma_avg / (np.linalg.norm(chroma_avg) + 1e-8)
     major_norm = _MAJOR_PROFILE / np.linalg.norm(_MAJOR_PROFILE)
     minor_norm = _MINOR_PROFILE / np.linalg.norm(_MINOR_PROFILE)
-    
+
     keys = list(MusicalKey)
     all_correlations = {}
     best_corr = -1.0
     best_key = MusicalKey.C
     best_mode = Mode.MAJOR
-    
+
     for i, key in enumerate(keys):
         # Roll chroma to align with current key
         rolled = np.roll(chroma_avg, -i)
-        
+
         # Correlate with both profiles
         maj_corr = float(np.corrcoef(rolled, major_norm)[0, 1])
         min_corr = float(np.corrcoef(rolled, minor_norm)[0, 1])
-        
+
         all_correlations[f"{key.value} major"] = maj_corr
         all_correlations[f"{key.value} minor"] = min_corr
-        
+
         if maj_corr > best_corr:
             best_corr = maj_corr
             best_key = key
             best_mode = Mode.MAJOR
-        
+
         if min_corr > best_corr:
             best_corr = min_corr
             best_key = key
             best_mode = Mode.MINOR
-    
+
     # Convert correlation to confidence (0-1 scale)
     confidence = (best_corr + 1) / 2  # Map [-1, 1] to [0, 1]
-    
+
     return KeyDetectionResult(
         key=best_key,
         mode=best_mode,
@@ -974,7 +989,7 @@ from soundlab.effects.models import EffectConfig
 
 class AudioEffect(Protocol):
     """Protocol for audio effects."""
-    
+
     def process(self, audio: NDArray[np.float32], sample_rate: int) -> NDArray[np.float32]:
         """Apply the effect to audio samples."""
         ...
@@ -983,50 +998,50 @@ class AudioEffect(Protocol):
 class EffectsChain:
     """
     Chainable audio effects processor.
-    
+
     Examples
     --------
     >>> from soundlab.effects import EffectsChain
     >>> from soundlab.effects.dynamics import CompressorConfig
     >>> from soundlab.effects.time_based import ReverbConfig
-    >>> 
+    >>>
     >>> chain = EffectsChain()
     >>> chain.add(CompressorConfig(threshold_db=-20, ratio=4.0))
     >>> chain.add(ReverbConfig(room_size=0.5, wet=0.3))
-    >>> 
+    >>>
     >>> result = chain.process("input.wav", "output.wav")
     """
-    
+
     def __init__(self) -> None:
         self._effects: list[EffectConfig] = []
         self._board: Pedalboard | None = None
-    
+
     def add(self, effect: EffectConfig) -> "EffectsChain":
         """Add an effect to the chain (fluent API)."""
         self._effects.append(effect)
         self._board = None  # Invalidate cached board
         return self
-    
+
     def clear(self) -> "EffectsChain":
         """Clear all effects from the chain."""
         self._effects.clear()
         self._board = None
         return self
-    
+
     @property
     def effects(self) -> Sequence[EffectConfig]:
         """Current effects in the chain."""
         return tuple(self._effects)
-    
+
     def _build_board(self) -> Pedalboard:
         """Build the Pedalboard from effect configs."""
         if self._board is not None:
             return self._board
-        
+
         plugins = [effect.to_plugin() for effect in self._effects]
         self._board = Pedalboard(plugins)
         return self._board
-    
+
     def process_array(
         self,
         audio: NDArray[np.float32],
@@ -1034,14 +1049,14 @@ class EffectsChain:
     ) -> NDArray[np.float32]:
         """
         Process audio samples through the effects chain.
-        
+
         Parameters
         ----------
         audio
             Audio samples as numpy array.
         sample_rate
             Sample rate of the audio.
-        
+
         Returns
         -------
         NDArray[np.float32]
@@ -1049,10 +1064,10 @@ class EffectsChain:
         """
         if not self._effects:
             return audio
-        
+
         board = self._build_board()
         return board(audio, sample_rate)
-    
+
     def process(
         self,
         input_path: Path | str,
@@ -1060,41 +1075,41 @@ class EffectsChain:
     ) -> Path:
         """
         Process an audio file through the effects chain.
-        
+
         Parameters
         ----------
         input_path
             Path to input audio file.
         output_path
             Path to save processed audio.
-        
+
         Returns
         -------
         Path
             Path to the processed audio file.
         """
         import soundfile as sf
-        
+
         input_path = Path(input_path)
         output_path = Path(output_path)
-        
+
         # Load audio
         audio, sr = sf.read(input_path, dtype="float32")
-        
+
         # Ensure correct shape (samples, channels) -> (channels, samples) for pedalboard
         if audio.ndim == 2:
             audio = audio.T
-        
+
         # Process
         processed = self.process_array(audio, sr)
-        
+
         # Save
         if processed.ndim == 2:
             processed = processed.T
-        
+
         output_path.parent.mkdir(parents=True, exist_ok=True)
         sf.write(output_path, processed, sr)
-        
+
         return output_path
 ```
 
@@ -1111,14 +1126,18 @@ alignment-safe post-processing. The notebook only wires UI inputs to these abstr
 class SeparatorBackend(Protocol):
     def separate(self, mix_wav: Path, output_dir: Path) -> dict[str, Path]: ...
 
+
 class TranscriberBackend(Protocol):
     def transcribe(self, stem_wav: Path, output_dir: Path) -> Path: ...
+
 
 class StemPostProcessor(Protocol):
     def process(self, stems: dict[str, Path], output_dir: Path) -> dict[str, Path]: ...
 
+
 class MidiPostProcessor(Protocol):
     def process(self, midi_path: Path, output_dir: Path) -> Path: ...
+
 
 class QAEvaluator(Protocol):
     def score(self, mix_wav: Path, stems: dict[str, Path]) -> dict[str, float]: ...
@@ -1267,31 +1286,35 @@ install_from = "pypi"  # @param ["pypi", "github_main", "github_dev"]
 import subprocess
 import sys
 
+
 def install_package():
     """Install soundlab with appropriate extras."""
     extras = "[notebook"
     if install_voice:
         extras += ",voice"
     extras += "]"
-    
+
     if install_from == "pypi":
         pkg = f"soundlab{extras}"
     elif install_from == "github_main":
         pkg = f"soundlab{extras} @ git+https://github.com/wyattowalsh/soundlab.git"
     else:  # github_dev
         pkg = f"soundlab{extras} @ git+https://github.com/wyattowalsh/soundlab.git@dev"
-    
+
     subprocess.check_call([sys.executable, "-m", "pip", "install", "-q", pkg])
     print(f"✅ Installed: {pkg}")
+
 
 install_package()
 
 # Verify installation
 import soundlab
+
 print(f"✅ SoundLab version: {soundlab.__version__}")
 
 # Configure logging
 from soundlab.utils.logging import configure_logging
+
 configure_logging(level=log_level)
 ```
 
@@ -1309,31 +1332,33 @@ from soundlab.core.audio import AudioSegment
 # Global state
 CURRENT_AUDIO: AudioSegment | None = None
 
+
 def handle_upload(audio_path: str | None) -> tuple[str, str]:
     """Handle audio file upload."""
     global CURRENT_AUDIO
-    
+
     if audio_path is None:
         return "No file uploaded", ""
-    
+
     try:
         CURRENT_AUDIO = load_audio(audio_path)
         meta = CURRENT_AUDIO.metadata
-        
+
         info = f"""
         **File:** {Path(audio_path).name}
         **Duration:** {meta.duration_str}
         **Sample Rate:** {meta.sample_rate} Hz
-        **Channels:** {meta.channels} ({'Stereo' if meta.is_stereo else 'Mono'})
+        **Channels:** {meta.channels} ({"Stereo" if meta.is_stereo else "Mono"})
         """
         return info.strip(), "✅ Audio loaded successfully!"
     except Exception as e:
         return f"Error: {e}", "❌ Failed to load audio"
 
+
 with gr.Blocks(theme=gr.themes.Soft()) as upload_interface:
     gr.Markdown("## 🎵 Upload Audio File")
     gr.Markdown("Supported formats: WAV, MP3, FLAC, OGG, AIFF, M4A")
-    
+
     with gr.Row():
         with gr.Column(scale=2):
             audio_input = gr.Audio(
@@ -1344,7 +1369,7 @@ with gr.Blocks(theme=gr.themes.Soft()) as upload_interface:
         with gr.Column(scale=1):
             info_output = gr.Markdown(label="Audio Info")
             status_output = gr.Markdown()
-    
+
     audio_input.change(
         fn=handle_upload,
         inputs=[audio_input],
@@ -1408,49 +1433,54 @@ else:
 import zipfile
 from google.colab import files as colab_files
 
+
 def create_export_zip() -> Path:
     """Create a zip file of all outputs."""
     zip_path = EXPORTS_DIR / "soundlab_export.zip"
-    
+
     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
         for subdir in [STEMS_DIR, MIDI_DIR, EFFECTS_DIR, ANALYSIS_DIR, VOICE_DIR]:
             for file in subdir.glob("*"):
                 if file.is_file():
                     zf.write(file, f"{subdir.name}/{file.name}")
-    
+
     return zip_path
+
 
 def download_interface():
     """Gradio interface for downloading files."""
     with gr.Blocks() as interface:
         gr.Markdown("## 💾 Download Processed Files")
-        
+
         with gr.Row():
             with gr.Column():
                 gr.Markdown("### Individual Files")
                 file_dropdown = gr.Dropdown(
                     label="Select file",
-                    choices=[str(f) for d in [STEMS_DIR, MIDI_DIR, EFFECTS_DIR] for f in d.glob("*")],
+                    choices=[
+                        str(f) for d in [STEMS_DIR, MIDI_DIR, EFFECTS_DIR] for f in d.glob("*")
+                    ],
                 )
                 single_download = gr.File(label="Download")
-            
+
             with gr.Column():
                 gr.Markdown("### Download All")
                 zip_btn = gr.Button("📦 Create ZIP", variant="primary")
                 zip_download = gr.File(label="Download ZIP")
-        
+
         file_dropdown.change(
             fn=lambda x: x,
             inputs=[file_dropdown],
             outputs=[single_download],
         )
-        
+
         zip_btn.click(
             fn=create_export_zip,
             outputs=[zip_download],
         )
-        
+
         return interface
+
 
 download_interface().launch(height=400)
 ```

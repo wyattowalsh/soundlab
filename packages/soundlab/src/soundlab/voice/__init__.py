@@ -8,7 +8,7 @@ __all__ = [
     "SVCConfig",
     "SVCResult",
     "TTSConfig",
-    "TTSResult",
     "TTSGenerator",
+    "TTSResult",
     "VoiceConverter",
 ]

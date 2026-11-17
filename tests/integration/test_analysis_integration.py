@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 
 np = pytest.importorskip("numpy")
+
+from typing import TYPE_CHECKING
 
 from soundlab.analysis import (
     AnalysisResult,
@@ -20,6 +21,9 @@ from soundlab.analysis import (
     analyze_audio,
 )
 from soundlab.analysis.onsets import OnsetResult
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 # ---------------------------------------------------------------------------
 # Fixtures

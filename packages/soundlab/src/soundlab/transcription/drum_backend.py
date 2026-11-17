@@ -248,9 +248,7 @@ class DrumTranscriber:
         midi_notes: list[MIDINote] = []
 
         for i, onset_time in enumerate(onset_times):
-            centroid = _compute_spectral_centroid(
-                y, sr, onset_time, self.config.centroid_window
-            )
+            centroid = _compute_spectral_centroid(y, sr, onset_time, self.config.centroid_window)
             pitch = _classify_drum_hit(centroid, self.config)
             raw_velocity = velocities[i] if i < len(velocities) else 64
             velocity = _clamp_velocity(raw_velocity * self._velocity_scale)

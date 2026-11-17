@@ -68,6 +68,12 @@ ignore = ["E501"]
 [tool.ruff.lint.isort]
 known-first-party = ["soundlab"]
 
+[tool.ruff.lint.per-file-ignores]
+# Notebook cells keep a title before imports, repeat imports, and use emoji in user text.
+"*.ipynb" = ["E402", "F404", "F811", "RUF001"]
+# Tests import the library after pytest.importorskip so a missing optional dependency skips cleanly.
+"tests/**/*.py" = ["E402"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"

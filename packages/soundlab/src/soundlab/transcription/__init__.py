@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import sys
-from typing import TYPE_CHECKING, Literal, Union
+from typing import TYPE_CHECKING, Literal
 
 from soundlab.transcription.basic_pitch import MIDITranscriber
 from soundlab.transcription.crepe_backend import CREPETranscriber
@@ -19,7 +19,7 @@ if TYPE_CHECKING:
     from soundlab.transcription.drum_backend import DrumConfig
 
 # Type alias for transcriber backends
-TranscriberBackend = Union[MIDITranscriber, CREPETranscriber, DrumTranscriber]
+TranscriberBackend = MIDITranscriber | CREPETranscriber | DrumTranscriber
 
 # Python version check for backend selection
 _PYTHON_312_PLUS = sys.version_info >= (3, 12)
@@ -119,9 +119,7 @@ def get_transcriber(
     # Handle explicit CREPE request
     if backend == "crepe":
         if not _is_crepe_available():
-            raise ImportError(
-                "CREPE is not installed. Install it with: pip install crepe"
-            )
+            raise ImportError("CREPE is not installed. Install it with: pip install crepe")
         return CREPETranscriber(config=config)
 
     # Auto selection logic
@@ -148,8 +146,7 @@ def get_transcriber(
         )
 
     raise ValueError(
-        f"Invalid backend: {backend!r}. "
-        "Must be one of: 'auto', 'basic_pitch', 'crepe', 'drum'"
+        f"Invalid backend: {backend!r}. Must be one of: 'auto', 'basic_pitch', 'crepe', 'drum'"
     )
 
 
@@ -159,8 +156,8 @@ __all__ = [
     "DrumTranscriptionConfig",
     "MIDIResult",
     "MIDITranscriber",
-    "TranscriptionConfig",
     "TranscriberBackend",
+    "TranscriptionConfig",
     "get_transcriber",
     "render_piano_roll",
 ]

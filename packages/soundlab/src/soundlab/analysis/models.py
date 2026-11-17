@@ -7,7 +7,7 @@ from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from soundlab.analysis.onsets import OnsetResult
+from soundlab.analysis.onsets import OnsetResult  # noqa: TC001 - pydantic resolves this field at runtime
 
 
 class MusicalKey(StrEnum):
