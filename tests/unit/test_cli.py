@@ -503,3 +503,82 @@ class TestTTSCommand:
 
         assert result.exit_code == 1
         assert "voice" in result.stdout.lower()
+
+
+class TestTranscribeCommand:
+    """Tests for CLI transcription backend selection."""
+
+    def test_transcribe_uses_get_transcriber(self, tmp_path: Path) -> None:
+        """transcribe routes through get_transcriber instead of MIDITranscriber."""
+        from unittest.mock import MagicMock, patch
+
+        from typer.testing import CliRunner
+
+        from soundlab.cli import app
+        from soundlab.transcription.models import TranscriptionConfig
+
+        runner = CliRunner()
+        audio = tmp_path / "in.wav"
+        audio.write_bytes(b"RIFF")
+        output = tmp_path / "midi"
+        mock_transcriber = MagicMock()
+        mock_result = MagicMock()
+        mock_result.model_dump_json.return_value = '{"notes": []}'
+        mock_transcriber.transcribe.return_value = mock_result
+
+        with patch("soundlab.cli.get_transcriber", return_value=mock_transcriber) as get_transcriber:
+            result = runner.invoke(
+                app,
+                [
+                    "transcribe",
+                    str(audio),
+                    str(output),
+                    "--onset-thresh",
+                    "0.4",
+                    "--min-note-length",
+                    "0.1",
+                ],
+            )
+
+        assert result.exit_code == 0
+        get_transcriber.assert_called_once()
+        assert get_transcriber.call_args.kwargs["backend"] == "auto"
+        config = get_transcriber.call_args.kwargs["config"]
+        assert isinstance(config, TranscriptionConfig)
+        assert config.onset_thresh == 0.4
+        assert config.min_note_length == 0.1
+        mock_transcriber.transcribe.assert_called_once_with(audio, output)
+
+    def test_transcribe_on_python_312_uses_available_backend(self, tmp_path: Path) -> None:
+        """Python 3.12 does not construct MIDITranscriber when basic-pitch is absent."""
+        from unittest.mock import MagicMock, patch
+
+        from typer.testing import CliRunner
+
+        from soundlab.cli import app
+
+        runner = CliRunner()
+        audio = tmp_path / "in.wav"
+        audio.write_bytes(b"RIFF")
+        output = tmp_path / "midi"
+        mock_result = MagicMock()
+        mock_result.model_dump_json.return_value = '{"notes": []}'
+
+        with (
+            patch("soundlab.transcription._PYTHON_312_PLUS", True),
+            patch("soundlab.transcription._is_basic_pitch_available", return_value=False),
+            patch("soundlab.transcription._is_crepe_available", return_value=True),
+            patch(
+                "soundlab.transcription.basic_pitch.MIDITranscriber",
+                side_effect=AssertionError("CLI must not construct MIDITranscriber"),
+            ),
+            patch(
+                "soundlab.transcription.crepe_backend.CREPETranscriber.transcribe",
+                return_value=mock_result,
+            ) as transcribe,
+        ):
+            result = runner.invoke(app, ["transcribe", str(audio), str(output)])
+
+        assert result.exit_code == 0, result.stdout
+        transcribe.assert_called_once()
+        assert "basic-pitch is required for MIDI transcription" not in result.stdout

@@ -87,6 +87,25 @@ class TestTranscriptionConfig:
         assert config_min.min_note_length == 0.01
         assert config_max.min_note_length == 0.2
 
+    def test_minimum_note_length_ms_for_basic_pitch_0_3(self) -> None:
+        """0.058 seconds is 58 ms so basic-pitch 0.3 does not round it to 0 frames."""
+        config = TranscriptionConfig()
+        assert config.min_note_length == 0.058
+        assert config.minimum_note_length_ms() == 58.0
+
+        custom = TranscriptionConfig(min_note_length=0.1)
+        assert custom.minimum_note_length_ms() == 100.0
+
+        # basic-pitch 0.3.1: int(round(minimum_note_length / 1000 * (22050 / 256)))
+        sample_rate = 22050
+        fft_hop = 256
+
+        def frames(minimum_note_length_ms: float) -> int:
+            return round(minimum_note_length_ms / 1000 * (sample_rate / fft_hop))
+
+        assert frames(config.min_note_length) == 0
+        assert frames(config.minimum_note_length_ms()) == 5
+
     def test_min_freq_bounds(self) -> None:
         """min_freq should be bounded [20.0, 500.0]."""
         with pytest.raises(pydantic.ValidationError):

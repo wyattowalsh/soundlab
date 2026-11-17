@@ -685,8 +685,9 @@ class TestSaveMidiEdgeCases:
             output_path = tmp_path / "time_zero.mid"
             save_midi(data, output_path)
 
-        # Verify note_on was created for time 0
+        # Verify note_on was created for time 0 on the explicit melodic channel.
         mock_mido.Message.assert_any_call("note_on", channel=0, note=60, velocity=100)
+        mock_midi_file.save.assert_called_once()
 
     def test_drum_channel_is_written(self, tmp_path: Path) -> None:
         """Drum notes keep MIDI channel 9 instead of mido's channel 0 default."""
@@ -698,7 +699,7 @@ class TestSaveMidiEdgeCases:
         mock_mido.bpm2tempo.return_value = 500000
         mock_mido.second2tick.return_value = 0
         mock_mido.MetaMessage.return_value = MagicMock(time=0)
-        mock_mido.Message.side_effect = lambda *args, **kwargs: MagicMock(time=0)
+        mock_mido.Message.side_effect = lambda *_args, **_kwargs: MagicMock(time=0)
 
         with patch("soundlab.io.midi_io.importlib.import_module", return_value=mock_mido):
             note = MIDINote(
@@ -711,7 +712,68 @@ class TestSaveMidiEdgeCases:
             save_midi(MIDIData(notes=[note], tempo=120.0), tmp_path / "drums.mid")
 
         mock_mido.Message.assert_any_call("note_on", channel=9, note=36, velocity=100)
+        mock_mido.Message.assert_any_call("note_off", channel=9, note=36, velocity=0)
         mock_midi_file.save.assert_called_once()
+
+    def test_drum_pitch_does_not_select_channel(self, tmp_path: Path) -> None:
+        """A kick pitch stays on channel 0 unless the caller sets channel 9."""
+        mock_mido = MagicMock()
+        mock_midi_file = MagicMock()
+        mock_mido.MidiFile.return_value = mock_midi_file
+        mock_mido.MidiTrack.return_value = []
+        mock_mido.bpm2tempo.return_value = 500000
+        mock_mido.second2tick.return_value = 0
+        mock_mido.MetaMessage.return_value = MagicMock(time=0)
+        mock_mido.Message.side_effect = lambda *_args, **_kwargs: MagicMock(time=0)
+
+        with patch("soundlab.io.midi_io.importlib.import_module", return_value=mock_mido):
+            note = MIDINote(pitch=36, start_seconds=0.0, end_seconds=0.1, velocity=100)
+            save_midi(MIDIData(notes=[note], tempo=120.0), tmp_path / "melodic.mid")
+
+        assert note.channel == 0
+        mock_mido.Message.assert_any_call("note_on", channel=0, note=36, velocity=100)
+
+    def test_channel_bounds(self) -> None:
+        """MIDI channel is 0-15 and defaults to the melodic channel."""
+        note = MIDINote(pitch=60, start_seconds=0.0, end_seconds=0.2, velocity=80)
+        assert note.channel == 0
+        drum = MIDINote(pitch=38, start_seconds=0.0, end_seconds=0.1, velocity=90, channel=9)
+        assert drum.channel == 9
+        with pytest.raises(ValueError):
+            MIDINote(pitch=36, start_seconds=0.0, end_seconds=0.1, velocity=100, channel=-1)
+        with pytest.raises(ValueError):
+            MIDINote(pitch=36, start_seconds=0.0, end_seconds=0.1, velocity=100, channel=16)
+
+    def test_roundtrip_preserves_explicit_channels(self, tmp_path: Path) -> None:
+        """Melodic notes stay on channel 0 and drum hits stay on channel 9."""
+        mido = pytest.importorskip("mido")
+        data = MIDIData(
+            notes=[
+                MIDINote(pitch=60, start_seconds=0.0, end_seconds=0.5, velocity=100, channel=0),
+                MIDINote(pitch=36, start_seconds=0.1, end_seconds=0.2, velocity=110, channel=0),
+                MIDINote(pitch=36, start_seconds=0.3, end_seconds=0.4, velocity=120, channel=9),
+            ]
+        )
+        path = tmp_path / "channels.mid"
+        save_midi(data, path)
+
+        midi_file = mido.MidiFile(str(path))
+        note_ons = [
+            (message.channel, message.note, message.velocity)
+            for track in midi_file.tracks
+            for message in track
+            if message.type == "note_on" and message.velocity > 0
+        ]
+        assert (0, 60, 100) in note_ons
+        assert (0, 36, 110) in note_ons
+        assert (9, 36, 120) in note_ons
+
+        loaded = load_midi(path)
+        assert {(note.pitch, note.channel, note.velocity) for note in loaded.notes} == {
+            (60, 0, 100),
+            (36, 0, 110),
+            (36, 9, 120),
+        }
 
     def test_simultaneous_notes_ordered(self, tmp_path: Path) -> None:
         """Simultaneous notes maintain consistent ordering (note_off before note_on at same tick)."""

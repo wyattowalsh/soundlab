@@ -189,6 +189,11 @@ class TestDrumTranscriber:
             assert len(result.notes) == 4
             # Should have tried to save MIDI
             mock_save_midi.assert_called_once()
+            mock_detect_onsets.assert_called_once()
+            assert mock_detect_onsets.call_args.kwargs["onset_threshold"] == 0.5
+            saved = mock_save_midi.call_args.args[0]
+            assert saved.notes
+            assert all(note.channel == 9 for note in saved.notes)
             # Path should be set
             assert result.path.suffix == ".mid"
             assert "drums" in result.path.stem
@@ -602,3 +607,122 @@ class TestTranscriptionBackendIntegration:
         # Should map drum config to transcription config
         assert trans_config.onset_thresh == 0.4
         assert trans_config.min_note_length == 0.15
+
+
+class TestMIDITranscriberBasicPitchContract:
+    """basic-pitch 0.3 predict contract used by MIDITranscriber."""
+
+    def test_predict_passes_model_path_and_milliseconds(self, tmp_path: Path) -> None:
+        """0.3 requires model_or_model_path, and minimum_note_length is milliseconds."""
+        import sys
+
+        from soundlab.transcription.basic_pitch import MIDITranscriber
+        from soundlab.transcription.models import TranscriptionConfig
+
+        audio = tmp_path / "song.wav"
+        audio.write_bytes(b"RIFF")
+        output = tmp_path / "out"
+        output.mkdir()
+        decoy = output / "already-there.mid"
+        decoy.write_bytes(b"MThd")
+
+        package = MagicMock()
+        package.ICASSP_2022_MODEL_PATH = "/models/icassp_2022/nmp"
+        inference = MagicMock()
+        inference.ICASSP_2022_MODEL_PATH = "/inference/should-not-win"
+        midi_data = MagicMock()
+        inference.predict.return_value = (
+            MagicMock(),
+            midi_data,
+            np.array([[0.0, 0.5, 60, 80.0]]),
+        )
+
+        config = TranscriptionConfig(min_note_length=0.058, onset_thresh=0.4, frame_thresh=0.2)
+        with patch.dict(sys.modules, {"basic_pitch": package, "basic_pitch.inference": inference}):
+            result = MIDITranscriber(config=config).transcribe(audio, output)
+
+        kwargs = inference.predict.call_args.kwargs
+        assert kwargs["model_or_model_path"] == "/models/icassp_2022/nmp"
+        assert kwargs["minimum_note_length"] == 58.0
+        assert kwargs["onset_threshold"] == 0.4
+        assert kwargs["frame_threshold"] == 0.2
+        midi_data.write.assert_called_once_with(str(output / "song.mid"))
+        assert result.path == output / "song.mid"
+        assert result.path != decoy
+
+        # 58 ms is 5 frames; passing the raw 0.058 second value would be 0 frames.
+        sample_rate = 22050
+        hop = 256
+        frames = round(kwargs["minimum_note_length"] / 1000 * (sample_rate / hop))
+        assert frames == 5
+
+    def test_failed_midi_write_is_not_a_directory_hit(self, tmp_path: Path) -> None:
+        """A failed PrettyMIDI write must not be reported as the newest .mid."""
+        import sys
+
+        from soundlab.transcription.basic_pitch import MIDITranscriber
+
+        audio = tmp_path / "song.wav"
+        audio.write_bytes(b"RIFF")
+        output = tmp_path / "out"
+        output.mkdir()
+        decoy = output / "older.mid"
+        decoy.write_bytes(b"MThd")
+
+        package = MagicMock()
+        package.ICASSP_2022_MODEL_PATH = "/models/icassp_2022/nmp"
+        inference = MagicMock()
+        midi_data = MagicMock()
+        midi_data.write.side_effect = OSError("disk full")
+        inference.predict.return_value = (MagicMock(), midi_data, np.array([[0.0, 0.2, 64, 90.0]]))
+
+        with (
+            patch.dict(sys.modules, {"basic_pitch": package, "basic_pitch.inference": inference}),
+            patch("soundlab.transcription.basic_pitch._pick_midi_file") as pick,
+            pytest.raises(OSError, match="disk full"),
+        ):
+            MIDITranscriber().transcribe(audio, output)
+
+        pick.assert_not_called()
+
+    def test_missing_model_path_raises(self, tmp_path: Path) -> None:
+        """predict is not called when basic-pitch 0.3 has no model path."""
+        import sys
+        import types
+
+        from soundlab.transcription.basic_pitch import MIDITranscriber
+
+        audio = tmp_path / "song.wav"
+        audio.write_bytes(b"RIFF")
+        output = tmp_path / "out"
+        package = types.ModuleType("basic_pitch")
+        inference = MagicMock(spec=["predict"])
+
+        with (
+            patch.dict(sys.modules, {"basic_pitch": package, "basic_pitch.inference": inference}),
+            pytest.raises(ImportError, match="model_or_model_path"),
+        ):
+            MIDITranscriber().transcribe(audio, output)
+
+        inference.predict.assert_not_called()
+
+    def test_drum_onset_threshold_is_configurable(self, tmp_path: Path) -> None:
+        """DrumConfig.onset_thresh is forwarded when the detector accepts it."""
+        from soundlab.transcription.drum_backend import DrumConfig, DrumTranscriber
+
+        audio = tmp_path / "drums.wav"
+        audio.write_bytes(b"RIFF")
+        output = tmp_path / "out"
+        mock_librosa = MagicMock()
+        mock_librosa.load.return_value = (np.zeros(1000, dtype=np.float32), 22050)
+        onsets = MagicMock()
+        onsets.return_value.timestamps = []
+
+        with (
+            patch("soundlab.transcription.drum_backend._load_librosa", return_value=mock_librosa),
+            patch("soundlab.transcription.drum_backend.detect_onsets", onsets),
+            patch("soundlab.transcription.drum_backend.save_midi"),
+        ):
+            DrumTranscriber(config=DrumConfig(onset_thresh=0.7)).transcribe(audio, output)
+
+        assert onsets.call_args.kwargs["onset_threshold"] == 0.7

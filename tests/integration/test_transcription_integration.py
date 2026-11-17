@@ -131,7 +131,9 @@ class TestTranscriptionIntegration:
             call_kwargs = mock_inference.predict.call_args[1]
             assert call_kwargs["onset_threshold"] == 0.6
             assert call_kwargs["frame_threshold"] == 0.4
-            assert call_kwargs["minimum_note_length"] == 0.1
+            # Config stores seconds. basic-pitch 0.3 minimum_note_length is milliseconds.
+            assert call_kwargs["minimum_note_length"] == 100.0
+            assert "model_or_model_path" in call_kwargs
 
         assert isinstance(result, MIDIResult)
 
