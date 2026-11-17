@@ -8,7 +8,12 @@ from typing import TYPE_CHECKING, Any
 
 import torch
 from loguru import logger
-from tenacity import retry, stop_after_attempt, wait_exponential
+from tenacity import (
+    retry,
+    retry_if_not_exception_type,
+    stop_after_attempt,
+    wait_exponential,
+)
 
 from soundlab.core.exceptions import GPUMemoryError, ModelNotFoundError, ProcessingError
 from soundlab.separation.models import (
@@ -72,6 +77,7 @@ class StemSeparator:
     @retry(
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=2, max=30),
+        retry=retry_if_not_exception_type(ProcessingError),
         reraise=True,
     )
     def separate(
@@ -117,7 +123,8 @@ class StemSeparator:
                 progress=progress_callback is not None,
             )[0]
 
-        source_names = [str(name) for name in getattr(model, "sources", [])]
+        raw_sources = getattr(model, "sources", None)
+        source_names: list[str] = [] if raw_sources is None else [str(name) for name in raw_sources]
         stem_names, target_index = output_stem_names(
             source_names,
             len(sources),

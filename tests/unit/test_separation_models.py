@@ -7,11 +7,19 @@ from unittest.mock import MagicMock, call, patch
 
 import numpy as np
 import pytest
+import soundfile as sf
 
 pytest.importorskip("pydantic")
 pydantic = pytest.importorskip("pydantic")
 
-from soundlab.separation.models import DemucsModel, SeparationConfig, StemResult
+from soundlab.core.exceptions import ProcessingError
+from soundlab.separation.models import (
+    DemucsModel,
+    SeparationConfig,
+    StemResult,
+    output_stem_names,
+    stem_audio_subtype,
+)
 
 # --------------------------------------------------------------------------- #
 # DemucsModel Enum Tests
@@ -46,28 +54,51 @@ class TestDemucsModel:
         assert DemucsModel.HTDEMUCS_6S.stem_count == 6
 
     def test_stems_4_stem_models(self) -> None:
-        """4-stem models should return base stems."""
-        expected_stems = ["vocals", "drums", "bass", "other"]
+        """4-stem tensor order is model.sources, not the vocals-first catalog."""
+        sources = ["drums", "bass", "other", "vocals"]
+        names, index = output_stem_names(sources, len(sources), None)
+        assert names == sources
+        assert index is None
+        assert names != ["vocals", "drums", "bass", "other"]
 
-        for model in [DemucsModel.HTDEMUCS, DemucsModel.HTDEMUCS_FT]:
-            assert model.stems == expected_stems
+        two_names, vocals_index = output_stem_names(sources, len(sources), "vocals")
+        assert two_names == ["vocals", "no_vocals"]
+        assert vocals_index == sources.index("vocals")
+        assert vocals_index == 3
+
+        for model in (
+            DemucsModel.HTDEMUCS,
+            DemucsModel.HTDEMUCS_FT,
+            DemucsModel.MDX_EXTRA,
+            DemucsModel.MDX_EXTRA_Q,
+        ):
+            assert set(model.stems) == set(sources)
+            assert len(model.stems) == model.stem_count == 4
 
     def test_stems_6_stem_model(self) -> None:
-        """6-stem model should include piano and guitar."""
-        expected_stems = ["vocals", "drums", "bass", "other", "piano", "guitar"]
-        assert DemucsModel.HTDEMUCS_6S.stems == expected_stems
+        """6-stem names follow model.sources instead of an invented piano/guitar order."""
+        sources = ["synth", "guitar", "piano", "vocals", "other", "drums"]
+        names, index = output_stem_names(sources, len(sources), None)
+        assert names == sources
+        assert index is None
+        assert names != ["vocals", "drums", "bass", "other", "piano", "guitar"]
+
+        two_names, guitar_index = output_stem_names(sources, len(sources), "guitar")
+        assert two_names == ["guitar", "no_guitar"]
+        assert guitar_index == sources.index("guitar")
+
+        catalog = DemucsModel.HTDEMUCS_6S.stems
+        assert len(catalog) == DemucsModel.HTDEMUCS_6S.stem_count == 6
+        assert set(catalog) == {"vocals", "drums", "bass", "other", "piano", "guitar"}
+        assert output_stem_names(sources, len(sources), None)[0] != catalog
 
     def test_float32_request_wins_over_int24_default(self) -> None:
         """A float32 request must not be stored as PCM_24."""
-        from soundlab.separation.models import stem_audio_subtype
-
         assert stem_audio_subtype(float32=True, int24=True) == "FLOAT"
         assert stem_audio_subtype(float32=False, int24=True) == "PCM_24"
 
     def test_output_names_follow_model_sources(self) -> None:
-        """Tensor order comes from model.sources, not a vocals-first list."""
-        from soundlab.separation.models import output_stem_names
-
+        """Tensor order and two-stem indexes both come from model.sources."""
         sources = ["drums", "bass", "other", "vocals"]
         names, index = output_stem_names(sources, 4, None)
         assert names == sources
@@ -76,6 +107,15 @@ class TestDemucsModel:
         names, index = output_stem_names(sources, 4, "vocals")
         assert names == ["vocals", "no_vocals"]
         assert index == 3
+
+        names, index = output_stem_names(sources, 4, "bass")
+        assert names == ["bass", "no_bass"]
+        assert index == sources.index("bass") == 1
+
+        with pytest.raises(ProcessingError, match=r"model\.sources"):
+            output_stem_names(sources, 6, None)
+        with pytest.raises(ProcessingError, match="Invalid two_stems"):
+            output_stem_names(sources, 4, "piano")
 
     def test_model_is_str_enum(self) -> None:
         """DemucsModel should be a StrEnum for JSON serialization."""
@@ -263,7 +303,7 @@ class TestStemResult:
         assert result.vocals is None
 
     def test_instrumental_property(self) -> None:
-        """instrumental property currently returns None."""
+        """A vocals path alone is not an instrumental mix and does not write one."""
         result = StemResult(
             stems={"vocals": Path("/output/vocals.wav")},
             source_path=Path("/input/song.mp3"),
@@ -271,7 +311,6 @@ class TestStemResult:
             processing_time_seconds=10.0,
         )
 
-        # Current implementation returns None
         assert result.instrumental is None
 
     def test_frozen_model(self) -> None:
@@ -424,9 +463,7 @@ class TestInstrumentalProperty:
         """instrumental should return None when stems dict is empty."""
         assert stem_result_empty.instrumental is None
 
-    def test_instrumental_property_returns_none_when_only_vocals(
-        self, tmp_path: Path
-    ) -> None:
+    def test_instrumental_property_returns_none_when_only_vocals(self, tmp_path: Path) -> None:
         """instrumental should return None when only vocals stem exists."""
         output_dir = tmp_path / "output"
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -440,9 +477,7 @@ class TestInstrumentalProperty:
 
         assert result.instrumental is None
 
-    def test_vocals_only_property_exposes_complement_without_writing(
-        self, tmp_path: Path
-    ) -> None:
+    def test_vocals_only_property_exposes_complement_without_writing(self, tmp_path: Path) -> None:
         """Reading instrumental after vocals-only returns no_vocals and does not write."""
         complement = tmp_path / "no_vocals.wav"
         complement.touch()
@@ -458,6 +493,7 @@ class TestInstrumentalProperty:
 
         assert result.instrumental == complement
         assert result.export_instrumental() == complement
+        assert not (tmp_path / "instrumental.wav").exists()
 
     @patch("soundlab.separation.models.sf.write")
     @patch("soundlab.separation.models.sf.read")
@@ -469,34 +505,40 @@ class TestInstrumentalProperty:
         mock_audio_data: np.ndarray,
         sample_rate: int,
     ) -> None:
-        """instrumental should load stem files, sum them, and save result."""
-        # Setup mock to return audio data
+        """export_instrumental sums every non-vocal stem and the property does not."""
         mock_read.return_value = (mock_audio_data, sample_rate)
 
-        # Make stem files "exist"
         for stem_path in stem_result_full.stems.values():
             stem_path.parent.mkdir(parents=True, exist_ok=True)
             stem_path.touch()
 
+        assert stem_result_full.instrumental is None
+        mock_read.assert_not_called()
+        mock_write.assert_not_called()
+
         instrumental_path = stem_result_full.export_instrumental()
 
-        # Verify reads occurred for non-vocal stems
         expected_read_calls = [
-            call(stem_result_full.stems["drums"]),
-            call(stem_result_full.stems["bass"]),
-            call(stem_result_full.stems["other"]),
+            call(stem_result_full.stems["drums"], always_2d=True),
+            call(stem_result_full.stems["bass"], always_2d=True),
+            call(stem_result_full.stems["other"], always_2d=True),
         ]
         mock_read.assert_has_calls(expected_read_calls, any_order=True)
         assert mock_read.call_count == 3
+        assert (
+            call(stem_result_full.stems["vocals"], always_2d=True) not in mock_read.call_args_list
+        )
 
-        # Verify write occurred
         mock_write.assert_called_once()
         write_args = mock_write.call_args
+        expected_sum = np.array(mock_audio_data, dtype=np.float64, copy=True) * 3
+        np.testing.assert_allclose(write_args[0][1], expected_sum)
         assert write_args[0][0] == stem_result_full.stems["drums"].parent / "instrumental.wav"
         assert write_args[0][2] == sample_rate
+        assert write_args.kwargs["subtype"] == "FLOAT"
 
-        # Verify return value
         assert instrumental_path == stem_result_full.stems["drums"].parent / "instrumental.wav"
+        assert stem_result_full.instrumental == instrumental_path
 
     @patch("soundlab.separation.models.sf.write")
     @patch("soundlab.separation.models.sf.read")
@@ -516,11 +558,14 @@ class TestInstrumentalProperty:
             stem_path.parent.mkdir(parents=True, exist_ok=True)
             stem_path.touch()
 
+        assert stem_result_full.instrumental is None
+        mock_write.assert_not_called()
+
         first_result = stem_result_full.export_instrumental()
         second_result = stem_result_full.export_instrumental()
 
-        # Results should be identical
         assert first_result == second_result
+        assert stem_result_full.instrumental == first_result
 
         # Read should only be called during first access (3 stems)
         assert mock_read.call_count == 3
@@ -558,13 +603,11 @@ class TestInstrumentalProperty:
 
         instrumental_path = stem_result_partial.export_instrumental()
 
-        # Verify only drums was read (only non-vocal stem available)
-        mock_read.assert_called_once_with(drums_path)
-
-        # Verify write occurred
+        mock_read.assert_called_once_with(drums_path, always_2d=True)
         mock_write.assert_called_once()
-
-        # Verify return value
+        written = mock_write.call_args[0][1]
+        np.testing.assert_allclose(written, np.array(mock_audio_data, dtype=np.float64, copy=True))
+        assert mock_write.call_args.kwargs["subtype"] == "FLOAT"
         assert instrumental_path == drums_path.parent / "instrumental.wav"
 
     @patch("soundlab.separation.models.sf.write")
@@ -589,13 +632,105 @@ class TestInstrumentalProperty:
 
         instrumental_path = stem_result_full.export_instrumental()
 
-        # Verify reads for existing files only
         assert mock_read.call_count == 2
-        mock_read.assert_any_call(drums_path)
-        mock_read.assert_any_call(bass_path)
-
-        # Verify write occurred
+        mock_read.assert_any_call(drums_path, always_2d=True)
+        mock_read.assert_any_call(bass_path, always_2d=True)
         mock_write.assert_called_once()
-
-        # Verify return value
+        written = mock_write.call_args[0][1]
+        np.testing.assert_allclose(
+            written,
+            np.array(mock_audio_data, dtype=np.float64, copy=True) * 2,
+        )
+        assert mock_write.call_args.kwargs["subtype"] == "FLOAT"
         assert instrumental_path == drums_path.parent / "instrumental.wav"
+
+    def _result(self, tmp_path: Path, stems: dict[str, Path]) -> StemResult:
+        return StemResult(
+            stems=stems,
+            source_path=tmp_path / "song.mp3",
+            config=SeparationConfig(),
+            processing_time_seconds=1.0,
+        )
+
+    def test_export_sums_non_catalog_sources_without_clipping(self, tmp_path: Path) -> None:
+        """Peaks above full scale and sources outside drums/bass/other are kept."""
+        output_dir = tmp_path / "output"
+        output_dir.mkdir()
+        sf.write(output_dir / "drums.wav", np.full((5, 2), 0.75), 44100, subtype="FLOAT")
+        sf.write(output_dir / "synth.wav", np.full((5, 2), 0.5), 44100, subtype="FLOAT")
+        result = self._result(
+            tmp_path,
+            {
+                "vocals": output_dir / "vocals.wav",
+                "drums": output_dir / "drums.wav",
+                "synth": output_dir / "synth.wav",
+            },
+        )
+
+        assert result.instrumental is None
+        assert not (output_dir / "instrumental.wav").exists()
+
+        path = result.export_instrumental()
+        assert path == output_dir / "instrumental.wav"
+        mixed, sample_rate = sf.read(path, always_2d=True)
+        assert sample_rate == 44100
+        assert mixed.shape == (5, 2)
+        np.testing.assert_allclose(mixed, 1.25)
+        assert sf.info(path).subtype == "FLOAT"
+
+        fresh = self._result(tmp_path, dict(result.stems))
+        before = path.stat().st_mtime_ns
+        assert fresh.instrumental == path
+        assert path.stat().st_mtime_ns == before
+
+    def test_export_refuses_to_truncate_or_resample(self, tmp_path: Path) -> None:
+        """Mismatched length or sample rate raises and does not write a clipped mix."""
+        output_dir = tmp_path / "output"
+        output_dir.mkdir()
+        sf.write(output_dir / "drums.wav", np.ones((6, 2)), 44100, subtype="FLOAT")
+        sf.write(output_dir / "bass.wav", np.ones((2, 2)), 44100, subtype="FLOAT")
+        short = self._result(
+            tmp_path,
+            {
+                "drums": output_dir / "drums.wav",
+                "bass": output_dir / "bass.wav",
+            },
+        )
+        with pytest.raises(ProcessingError, match="truncation"):
+            short.export_instrumental()
+        assert not (output_dir / "instrumental.wav").exists()
+
+        rate_dir = tmp_path / "rates"
+        rate_dir.mkdir()
+        sf.write(rate_dir / "drums.wav", np.ones((4, 2)), 44100, subtype="FLOAT")
+        sf.write(rate_dir / "bass.wav", np.ones((4, 2)), 48000, subtype="FLOAT")
+        mismatched = self._result(
+            tmp_path,
+            {
+                "drums": rate_dir / "drums.wav",
+                "bass": rate_dir / "bass.wav",
+            },
+        )
+        with pytest.raises(ProcessingError, match="truncation"):
+            mismatched.export_instrumental()
+        assert not (rate_dir / "instrumental.wav").exists()
+
+    def test_missing_no_vocals_file_is_not_the_instrumental(self, tmp_path: Path) -> None:
+        """A missing complement path is not returned, and a real stem can still be mixed."""
+        output_dir = tmp_path / "output"
+        output_dir.mkdir()
+        sf.write(output_dir / "drums.wav", np.full((4, 1), 0.25), 44100, subtype="FLOAT")
+        result = self._result(
+            tmp_path,
+            {
+                "vocals": output_dir / "vocals.wav",
+                "no_vocals": output_dir / "no_vocals.wav",
+                "drums": output_dir / "drums.wav",
+            },
+        )
+
+        assert result.instrumental is None
+        path = result.export_instrumental()
+        assert path == output_dir / "instrumental.wav"
+        mixed, _sample_rate = sf.read(path, always_2d=True)
+        np.testing.assert_allclose(mixed, 0.25)

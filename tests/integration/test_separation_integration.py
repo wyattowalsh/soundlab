@@ -6,11 +6,13 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
+import soundfile as sf
 
 np = pytest.importorskip("numpy")
 torch = pytest.importorskip("torch")
 
-from soundlab.separation import DemucsModel, SeparationConfig, StemSeparator
+from soundlab.core.exceptions import ProcessingError
+from soundlab.separation import DemucsModel, SeparationConfig, StemResult, StemSeparator
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -27,16 +29,59 @@ def mock_demucs_model() -> MagicMock:
     return model
 
 
-@pytest.fixture
-def sample_audio_tensor() -> torch.Tensor:
-    """Create a sample audio tensor (2 channels, 44100 samples = 1 second)."""
-    return torch.randn(2, 44100, dtype=torch.float32)
+def _source_tensor(sources: list[str], frames: int = 32) -> torch.Tensor:
+    """Build stems whose constant value identifies the model.sources index."""
+    stems = torch.zeros(len(sources), 2, frames, dtype=torch.float32)
+    for index in range(len(sources)):
+        stems[index] = (index + 1) / 10
+    return stems
 
 
-@pytest.fixture
-def sample_stems_tensor() -> torch.Tensor:
-    """Create sample separated stems tensor (4 stems, 2 channels, 44100 samples)."""
-    return torch.randn(4, 2, 44100, dtype=torch.float32)
+def _separate(
+    tmp_path: Path,
+    sources: list[str] | None,
+    stems: torch.Tensor,
+    *,
+    demucs_model: DemucsModel = DemucsModel.HTDEMUCS,
+    two_stems: str | None = None,
+) -> tuple[StemResult, Path]:
+    """Run StemSeparator against a mock checkpoint."""
+    input_dir = tmp_path / "input"
+    output_dir = tmp_path / "output"
+    input_dir.mkdir()
+    audio_path = input_dir / "test_audio.wav"
+    sf.write(audio_path, np.zeros((16, 2), dtype=np.float32), 44100, subtype="FLOAT")
+
+    mock_model = MagicMock()
+    mock_model.samplerate = 44100
+    mock_model.audio_channels = 2
+    mock_model.sources = None if sources is None else list(sources)
+    waveform = torch.zeros(2, int(stems.shape[-1]), dtype=torch.float32)
+    with (
+        patch("demucs.pretrained.get_model", return_value=mock_model),
+        patch("demucs.audio.AudioFile") as audio_file,
+        patch("demucs.apply.apply_model", return_value=stems[None]),
+        patch("soundlab.utils.gpu.get_device", return_value="cpu"),
+    ):
+        audio_file.return_value.read.return_value = waveform
+        config = SeparationConfig(
+            model=demucs_model,
+            device="cpu",
+            two_stems=two_stems,
+        )
+        result = StemSeparator(config=config).separate(audio_path, output_dir)
+
+    assert isinstance(result, StemResult)
+    assert result.source_path == audio_path
+    assert result.config == config
+    assert result.processing_time_seconds >= 0
+    return result, output_dir
+
+
+def _assert_constant(path: Path, value: float) -> None:
+    audio, sample_rate = sf.read(path, always_2d=True)
+    assert sample_rate == 44100
+    np.testing.assert_allclose(audio, value, atol=1e-5)
 
 
 # ---------------------------------------------------------------------------
@@ -52,85 +97,104 @@ class TestSeparationIntegration:
         self,
         tmp_path: Path,
         mock_demucs_model: MagicMock,
-        sample_audio_tensor: torch.Tensor,
-        sample_stems_tensor: torch.Tensor,
     ) -> None:
-        """Test full separation pipeline: load audio -> separate -> verify stems exist."""
-        # Setup paths
-        input_dir = tmp_path / "input"
-        output_dir = tmp_path / "output"
-        input_dir.mkdir()
-        audio_path = input_dir / "test_audio.wav"
+        """Saved stems follow model.sources order and carry that index's audio."""
+        sources = list(mock_demucs_model.sources)
+        result, _output_dir = _separate(tmp_path, sources, _source_tensor(sources))
 
-        # Create a simple test WAV file
-        import soundfile as sf
-
-        audio_data = np.random.randn(44100, 2).astype(np.float32) * 0.5
-        sf.write(str(audio_path), audio_data, 44100)
-
-        # Mock demucs components
-        mock_get_model = MagicMock(return_value=mock_demucs_model)
-        mock_audio_file = MagicMock()
-        mock_audio_file.return_value.read.return_value = sample_audio_tensor
-        mock_apply_model = MagicMock(return_value=sample_stems_tensor[None])
-
-        with (
-            patch("demucs.pretrained.get_model", mock_get_model),
-            patch("demucs.audio.AudioFile", mock_audio_file),
-            patch("demucs.apply.apply_model", mock_apply_model),
-            patch("soundlab.utils.gpu.get_device", return_value="cpu"),
-        ):
-            config = SeparationConfig(model=DemucsModel.HTDEMUCS, device="cpu")
-            separator = StemSeparator(config=config)
-            result = separator.separate(audio_path, output_dir)
-
-        # Verify result structure
-        assert result.source_path == audio_path
-        assert result.config == config
-        assert result.processing_time_seconds >= 0
-
-        assert list(result.stems) == ["drums", "bass", "other", "vocals"]
+        assert list(result.stems) == sources
+        for index, name in enumerate(sources):
+            assert result.stems[name].is_file()
+            _assert_constant(result.stems[name], (index + 1) / 10)
 
     def test_separate_with_two_stems_mode(
         self,
         tmp_path: Path,
         mock_demucs_model: MagicMock,
-        sample_audio_tensor: torch.Tensor,
-        sample_stems_tensor: torch.Tensor,
     ) -> None:
-        """Test separation in two-stems mode (vocals vs. accompaniment)."""
-        input_dir = tmp_path / "input"
-        output_dir = tmp_path / "output"
-        input_dir.mkdir()
-        audio_path = input_dir / "test_audio.wav"
-
-        # Create test WAV
-        import soundfile as sf
-
-        audio_data = np.random.randn(22050, 2).astype(np.float32) * 0.5
-        sf.write(str(audio_path), audio_data, 44100)
-
-        mock_get_model = MagicMock(return_value=mock_demucs_model)
-        mock_audio_file = MagicMock()
-        mock_audio_file.return_value.read.return_value = sample_audio_tensor
-        mock_apply_model = MagicMock(return_value=sample_stems_tensor[None])
-
-        with (
-            patch("demucs.pretrained.get_model", mock_get_model),
-            patch("demucs.audio.AudioFile", mock_audio_file),
-            patch("demucs.apply.apply_model", mock_apply_model),
-            patch("soundlab.utils.gpu.get_device", return_value="cpu"),
-        ):
-            config = SeparationConfig(
-                model=DemucsModel.HTDEMUCS,
-                device="cpu",
-                two_stems="vocals",
-            )
-            separator = StemSeparator(config=config)
-            result = separator.separate(audio_path, output_dir)
+        """Vocals-only indexes model.sources and keeps the complement as no_vocals."""
+        sources = list(mock_demucs_model.sources)
+        result, output_dir = _separate(
+            tmp_path,
+            sources,
+            _source_tensor(sources),
+            two_stems="vocals",
+        )
+        vocals_index = sources.index("vocals")
+        complement = sum((index + 1) / 10 for index in range(len(sources)) if index != vocals_index)
 
         assert list(result.stems) == ["vocals", "no_vocals"]
+        _assert_constant(result.stems["vocals"], (vocals_index + 1) / 10)
+        _assert_constant(result.stems["no_vocals"], complement)
         assert result.instrumental == result.stems["no_vocals"]
+        assert result.instrumental is not None
+        assert result.instrumental.is_file()
+        assert not (output_dir / "instrumental.wav").exists()
+
+    def test_two_stems_uses_the_same_source_list(
+        self,
+        tmp_path: Path,
+        mock_demucs_model: MagicMock,
+    ) -> None:
+        """A non-vocal two-stem target uses the same model.sources index."""
+        sources = list(mock_demucs_model.sources)
+        result, _output_dir = _separate(
+            tmp_path,
+            sources,
+            _source_tensor(sources),
+            two_stems="bass",
+        )
+        bass_index = sources.index("bass")
+        complement = sum((index + 1) / 10 for index in range(len(sources)) if index != bass_index)
+
+        assert list(result.stems) == ["bass", "no_bass"]
+        _assert_constant(result.stems["bass"], (bass_index + 1) / 10)
+        _assert_constant(result.stems["no_bass"], complement)
+
+    def test_six_stem_names_follow_model_sources(self, tmp_path: Path) -> None:
+        """htdemucs_6s output order is the checkpoint sources, not the enum catalog."""
+        sources = ["guitar", "piano", "vocals", "other", "bass", "drums"]
+        assert sources != list(DemucsModel.HTDEMUCS_6S.stems)
+
+        result, _output_dir = _separate(
+            tmp_path,
+            sources,
+            _source_tensor(sources),
+            demucs_model=DemucsModel.HTDEMUCS_6S,
+        )
+
+        assert list(result.stems) == sources
+        for index, name in enumerate(sources):
+            _assert_constant(result.stems[name], (index + 1) / 10)
+
+    def test_separate_rejects_source_count_mismatch(self, tmp_path: Path) -> None:
+        """A tensor count that disagrees with model.sources raises ProcessingError."""
+        with pytest.raises(ProcessingError, match=r"model\.sources"):
+            _separate(
+                tmp_path,
+                ["drums", "bass", "other"],
+                _source_tensor(["drums", "bass", "other", "vocals"]),
+            )
+        assert list((tmp_path / "output").glob("*.wav")) == []
+
+    def test_separate_rejects_checkpoint_without_sources(self, tmp_path: Path) -> None:
+        """A checkpoint with no model.sources raises instead of guessing names."""
+        with pytest.raises(ProcessingError, match=r"model\.sources"):
+            _separate(
+                tmp_path,
+                None,
+                _source_tensor(["drums", "bass", "other", "vocals"]),
+            )
+
+    def test_separate_rejects_unknown_two_stems(
+        self,
+        tmp_path: Path,
+        mock_demucs_model: MagicMock,
+    ) -> None:
+        """two_stems must name a source from the loaded model."""
+        sources = list(mock_demucs_model.sources)
+        with pytest.raises(ProcessingError, match="Invalid two_stems"):
+            _separate(tmp_path, sources, _source_tensor(sources), two_stems="piano")
 
     def test_separator_model_lazy_loading(self, mock_demucs_model: MagicMock) -> None:
         """Test that model is lazily loaded only when needed."""
@@ -145,8 +209,6 @@ class TestSeparationIntegration:
 
     def test_stem_result_vocals_property(self, tmp_path: Path) -> None:
         """Test StemResult.vocals property accessor."""
-        from soundlab.separation.models import StemResult
-
         vocals_path = tmp_path / "vocals.wav"
         vocals_path.touch()
 

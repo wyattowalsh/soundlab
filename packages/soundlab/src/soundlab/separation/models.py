@@ -28,6 +28,11 @@ class DemucsModel(StrEnum):
 
     @property
     def stems(self) -> list[str]:
+        """Known stem names for this checkpoint family.
+
+        The list is a catalog, not the tensor order. Separation names each
+        output from the loaded model's ``sources``.
+        """
         base = ["vocals", "drums", "bass", "other"]
         if self == DemucsModel.HTDEMUCS_6S:
             return [*base, "piano", "guitar"]
@@ -103,61 +108,80 @@ class StemResult(BaseModel):
 
     @property
     def instrumental(self) -> Path | None:
-        """Return an existing instrumental or vocals-only complement path.
+        """Return an existing instrumental mix, including vocals-only ``no_vocals``.
 
-        This property does not write audio. Call ``export_instrumental`` to
-        sum the non-vocal stems into a new file.
+        Reading this property does not create or modify audio. Call
+        ``export_instrumental`` to sum the non-vocal stems into a new file.
         """
         if self._instrumental_path is not None:
             return self._instrumental_path
         for name in ("no_vocals", "instrumental"):
             path = self.stems.get(name)
-            if path is not None:
+            if path is not None and path.is_file():
                 return path
         if not self.stems:
             return None
         candidate = next(iter(self.stems.values())).parent / "instrumental.wav"
-        if candidate.exists():
+        if candidate.is_file():
             return candidate
         return None
 
     def export_instrumental(self) -> Path | None:
-        """Write a summed instrumental mix and return its path.
+        """Write the non-vocal mix and return its path.
 
-        Vocals-only runs already store the complement as ``no_vocals`` and
-        that path is returned without a second write.
+        Every stem except ``vocals`` and ``no_*`` complements is summed, in
+        the result's stem order, so extra sources such as guitar are included
+        when they are present. A vocals-only run already stores that mix as
+        ``no_vocals`` and that file is returned without a second write.
+
+        Stems that share the mix must have the same sample rate and shape.
+        Mismatched audio raises ``ProcessingError`` instead of being shortened.
+        The sum is stored as float WAV so peaks above full scale are kept.
         """
         if self._instrumental_path is not None:
             return self._instrumental_path
+
         complement = self.stems.get("no_vocals")
-        if complement is not None:
+        if complement is not None and complement.is_file():
             object.__setattr__(self, "_instrumental_path", complement)
             return complement
 
-        instrumental_stems = ["drums", "bass", "other", "piano", "guitar"]
-        available = [name for name in instrumental_stems if name in self.stems]
-        if not available:
+        component_names = [
+            name
+            for name in self.stems
+            if name not in {"vocals", "instrumental"} and not name.startswith("no_")
+        ]
+        if not component_names:
             return None
 
-        output_dir = next(iter(self.stems.values())).parent
         combined: np.ndarray | None = None
         sample_rate: int | None = None
-        for stem_name in available:
+        reference_name: str | None = None
+        for stem_name in component_names:
             stem_path = self.stems[stem_name]
-            if not stem_path.exists():
+            if not stem_path.is_file():
                 continue
-            audio_data, sr = sf.read(stem_path)
-            if combined is None:
-                combined = audio_data
-                sample_rate = sr
-            else:
-                length = min(len(combined), len(audio_data))
-                combined = combined[:length] + audio_data[:length]
+            audio_data, sr = sf.read(stem_path, always_2d=True)
+            audio = np.array(audio_data, dtype=np.float64, copy=True)
+            rate = int(sr)
+            if combined is None or sample_rate is None or reference_name is None:
+                combined = audio
+                sample_rate = rate
+                reference_name = stem_name
+                continue
+            if rate != sample_rate or audio.shape != combined.shape:
+                raise ProcessingError(
+                    f"Stem {stem_name} cannot be mixed with {reference_name} "
+                    f"without clipping or truncation: expected {sample_rate} Hz "
+                    f"and shape {combined.shape}, got {rate} Hz and shape {audio.shape}."
+                )
+            combined = combined + audio
 
         if combined is None or sample_rate is None:
             return None
 
+        output_dir = next(iter(self.stems.values())).parent
         instrumental_path = output_dir / "instrumental.wav"
-        sf.write(instrumental_path, combined, sample_rate)
+        sf.write(instrumental_path, combined, sample_rate, subtype="FLOAT")
         object.__setattr__(self, "_instrumental_path", instrumental_path)
         return instrumental_path
