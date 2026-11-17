@@ -3,26 +3,48 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from contextlib import suppress
 from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from soundlab.core.exceptions import ConfigurationError
+from soundlab.effects.biquad import apply_rbj_filter
+
 if TYPE_CHECKING:
+    import numpy as np
+    from numpy.typing import NDArray
     from pedalboard import Plugin
 
 
 def _build_plugin(factory: type[Any], **kwargs: Any) -> Plugin:
-    """Create a pedalboard plugin, falling back to attribute assignment."""
+    """Create a pedalboard plugin and refuse parameters it cannot store."""
     try:
         return factory(**kwargs)
-    except TypeError:
+    except TypeError as exc:
         plugin = factory()
+        missing: list[str] = []
         for key, value in kwargs.items():
-            if hasattr(plugin, key):
-                with suppress(Exception):
-                    setattr(plugin, key, value)
+            if not hasattr(plugin, key):
+                missing.append(key)
+                continue
+            try:
+                setattr(plugin, key, value)
+            except Exception:
+                missing.append(key)
+                continue
+            if getattr(plugin, key) != value and not _close(getattr(plugin, key), value):
+                missing.append(key)
+        if missing:
+            names = ", ".join(missing)
+            raise TypeError(f"{factory.__name__} did not accept: {names}") from exc
         return plugin
+
+
+def _close(actual: Any, expected: Any) -> bool:
+    try:
+        return abs(float(actual) - float(expected)) <= 1e-4
+    except (TypeError, ValueError):
+        return False
 
 
 class EffectConfig(BaseModel, ABC):
@@ -103,8 +125,8 @@ class ReverbConfig(EffectConfig):
             Reverb,
             room_size=self.room_size,
             damping=self.damping,
-            wet=self.wet,
-            dry=self.dry,
+            wet_level=self.wet,
+            dry_level=self.dry,
             width=self.width,
         )
 
@@ -191,11 +213,19 @@ class HighpassConfig(EffectConfig):
     def to_plugin(self) -> Plugin:
         from pedalboard import HighpassFilter
 
+        if abs(self.q - 0.707) > 1e-6:
+            raise ConfigurationError(
+                "Pedalboard's high-pass filter has no Q control. "
+                "Use EffectsChain, which applies this filter as a biquad."
+            )
         return _build_plugin(
             HighpassFilter,
             cutoff_frequency_hz=self.cutoff_frequency_hz,
-            q=self.q,
         )
+
+    def process_array(self, audio: NDArray[np.float32], sample_rate: int) -> NDArray[np.float32]:
+        """Apply the high-pass biquad, including Q."""
+        return apply_rbj_filter(audio, sample_rate, self.cutoff_frequency_hz, self.q, "highpass")
 
 
 class LowpassConfig(EffectConfig):
@@ -207,11 +237,19 @@ class LowpassConfig(EffectConfig):
     def to_plugin(self) -> Plugin:
         from pedalboard import LowpassFilter
 
+        if abs(self.q - 0.707) > 1e-6:
+            raise ConfigurationError(
+                "Pedalboard's low-pass filter has no Q control. "
+                "Use EffectsChain, which applies this filter as a biquad."
+            )
         return _build_plugin(
             LowpassFilter,
             cutoff_frequency_hz=self.cutoff_frequency_hz,
-            q=self.q,
         )
+
+    def process_array(self, audio: NDArray[np.float32], sample_rate: int) -> NDArray[np.float32]:
+        """Apply the low-pass biquad, including Q."""
+        return apply_rbj_filter(audio, sample_rate, self.cutoff_frequency_hz, self.q, "lowpass")
 
 
 class GainConfig(EffectConfig):

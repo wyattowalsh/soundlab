@@ -17,6 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `SOUNDLAB_SEED` seeds Python, NumPy, and Torch. `force_gpu` reports a missing CUDA device instead of selecting CPU.
 - Studio defaults leave Drive, resampling, channel matching, peak normalization, excerpts, silence gating, MIDI quantization, and loudness export off until selected.
 - `soundlab tts` calls `TTSGenerator` when the voice extra imports.
+- Reverb wet and dry settings reach pedalboard as `wet_level` and `dry_level`. High-pass and low-pass Q is applied by an RBJ biquad inside `EffectsChain`. Asking pedalboard itself for a non-default Q raises, and any other plugin parameter the backend cannot store raises instead of being ignored.
+- `soundlab effects` can apply an explicit `--gain-db` and `--highpass-hz`. With neither option, it copies the audio.
 
 ### Changed
 

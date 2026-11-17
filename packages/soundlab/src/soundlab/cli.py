@@ -8,7 +8,7 @@ from typing import Annotated
 import typer
 
 from soundlab.analysis import analyze_audio
-from soundlab.effects import EffectsChain
+from soundlab.effects import EffectsChain, GainConfig, HighpassConfig
 from soundlab.separation import DemucsModel, SeparationConfig, StemSeparator
 from soundlab.transcription import TranscriptionConfig, get_transcriber
 
@@ -25,7 +25,10 @@ def separate(
     device: Annotated[str, typer.Option(help="Device selection (auto/cpu/cuda).")] = "auto",
     split: Annotated[bool, typer.Option(help="Enable chunked separation.")] = True,
     vocals_only: Annotated[
-        bool, typer.Option("--vocals-only", help="Isolate vocals only (outputs vocals + instrumental stems).")
+        bool,
+        typer.Option(
+            "--vocals-only", help="Isolate vocals only (outputs vocals + instrumental stems)."
+        ),
     ] = False,
 ) -> None:
     """Separate a mix into stems."""
@@ -81,9 +84,21 @@ def analyze(
 def effects(
     input_path: Annotated[Path, typer.Argument(help="Path to input audio file.")],
     output_path: Annotated[Path, typer.Argument(help="Path to output audio file.")],
+    gain_db: Annotated[
+        float | None,
+        typer.Option(help="Optional gain in dB. Omit to leave the level unchanged."),
+    ] = None,
+    highpass_hz: Annotated[
+        float | None,
+        typer.Option(help="Optional high-pass cutoff in Hz."),
+    ] = None,
 ) -> None:
-    """Apply an effects chain (currently pass-through unless configured in code)."""
+    """Apply an explicit effects chain. With no options, the audio is copied."""
     chain = EffectsChain()
+    if highpass_hz is not None:
+        chain.add(HighpassConfig(cutoff_frequency_hz=highpass_hz))
+    if gain_db is not None:
+        chain.add(GainConfig(gain_db=gain_db))
     result = chain.process(input_path, output_path)
     typer.echo(f"Wrote processed audio to {result}")
 
@@ -99,9 +114,7 @@ def tts(
     try:
         result = TTSGenerator().generate(TTSConfig(text=text))
     except ImportError:
-        typer.echo(
-            "TTS is not implemented yet. Install the voice extra and use soundlab.voice."
-        )
+        typer.echo("TTS is not implemented yet. Install the voice extra and use soundlab.voice.")
         raise typer.Exit(code=1) from None
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_bytes(result.audio_path.read_bytes())

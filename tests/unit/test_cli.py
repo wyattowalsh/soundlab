@@ -91,19 +91,12 @@ class TestCLIEntry:
         assert result.returncode == 0
 
     def test_cli_entry_point(self) -> None:
-        """CLI entry point 'soundlab' works."""
-        # This tests the installed entry point
-        result = subprocess.run(
-            ["soundlab", "--help"],
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
+        """The module entry point answers --help."""
+        result = _run_cli("--help")
 
-        # May fail if not installed, but should at least not error
-        if result.returncode == 0:
-            output = _get_output(result)
-            assert "soundlab" in output.lower() or "separate" in output
+        assert result.returncode == 0
+        output = _get_output(result)
+        assert "separate" in output.lower()
 
 
 class TestCLICommands:
@@ -526,7 +519,9 @@ class TestTranscribeCommand:
         mock_result.model_dump_json.return_value = '{"notes": []}'
         mock_transcriber.transcribe.return_value = mock_result
 
-        with patch("soundlab.cli.get_transcriber", return_value=mock_transcriber) as get_transcriber:
+        with patch(
+            "soundlab.cli.get_transcriber", return_value=mock_transcriber
+        ) as get_transcriber:
             result = runner.invoke(
                 app,
                 [

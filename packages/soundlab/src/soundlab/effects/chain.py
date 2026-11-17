@@ -64,8 +64,28 @@ class EffectsChain:
         sample_rate: int,
     ) -> NDArray[np.float32]:
         """Process audio samples through the effects chain."""
-        board = self._build_board()
-        return board(audio, sample_rate)
+        if not any(callable(getattr(effect, "process_array", None)) for effect in self._effects):
+            return self._build_board()(audio, sample_rate)
+
+        processed = audio
+        pending: list[object] = []
+
+        def flush() -> None:
+            nonlocal processed, pending
+            if not pending:
+                return
+            processed = Pedalboard(pending)(processed, sample_rate)
+            pending = []
+
+        for effect in self._effects:
+            processor = getattr(effect, "process_array", None)
+            if callable(processor):
+                flush()
+                processed = processor(processed, sample_rate)
+                continue
+            pending.append(effect.to_plugin())
+        flush()
+        return processed
 
     def process(self, input_path: str | Path, output_path: str | Path) -> Path:
         """Process an audio file and write the result."""
