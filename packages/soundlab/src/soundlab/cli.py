@@ -93,15 +93,26 @@ def tts(
     text: Annotated[str, typer.Argument(help="Text to synthesize.")],
     output_path: Annotated[Path, typer.Argument(help="Path to output audio file.")],
 ) -> None:
-    """Text-to-speech placeholder (requires voice implementation)."""
-    _ = text
-    _ = output_path
-    typer.echo("TTS is not implemented yet. Install voice extras and use soundlab.voice.")
-    raise typer.Exit(code=1)
+    """Synthesize speech when the voice extra is installed."""
+    from soundlab.voice import TTSConfig, TTSGenerator
+
+    try:
+        result = TTSGenerator().generate(TTSConfig(text=text))
+    except ImportError:
+        typer.echo(
+            "TTS is not implemented yet. Install the voice extra and use soundlab.voice."
+        )
+        raise typer.Exit(code=1) from None
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_bytes(result.audio_path.read_bytes())
+    typer.echo(f"Wrote speech to {output_path}")
 
 
 def main() -> None:
     """CLI entry point."""
+    from soundlab.utils.seed import apply_configured_seed
+
+    apply_configured_seed()
     app()
 
 

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -19,6 +19,7 @@ from soundlab.analysis import (
     TempoResult,
     analyze_audio,
 )
+from soundlab.analysis.onsets import OnsetResult
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -87,7 +88,7 @@ class TestAnalysisIntegration:
             patch("soundlab.analysis.detect_key", return_value=mock_key_result),
             patch("soundlab.analysis.measure_loudness", return_value=mock_loudness_result),
             patch("soundlab.analysis.analyze_spectral", return_value=mock_spectral_result),
-            patch("soundlab.analysis.detect_onsets", return_value=MagicMock()),
+            patch("soundlab.analysis.detect_onsets", return_value=OnsetResult()),
         ):
             result = analyze_audio(sample_audio_file)
 
@@ -120,7 +121,7 @@ class TestAnalysisIntegration:
             patch("soundlab.analysis.detect_key", return_value=mock_key_result),
             patch("soundlab.analysis.measure_loudness", return_value=mock_loudness_result),
             patch("soundlab.analysis.analyze_spectral", return_value=mock_spectral_result),
-            patch("soundlab.analysis.detect_onsets", return_value=MagicMock()),
+            patch("soundlab.analysis.detect_onsets", return_value=OnsetResult()),
         ):
             result = analyze_audio(sample_audio_file)
 
@@ -143,7 +144,7 @@ class TestAnalysisIntegration:
             patch("soundlab.analysis.detect_key", return_value=mock_key_result),
             patch("soundlab.analysis.measure_loudness", return_value=mock_loudness_result),
             patch("soundlab.analysis.analyze_spectral", return_value=mock_spectral_result),
-            patch("soundlab.analysis.detect_onsets", return_value=MagicMock()),
+            patch("soundlab.analysis.detect_onsets", return_value=OnsetResult()),
         ):
             result = analyze_audio(sample_audio_file)
 
@@ -168,7 +169,7 @@ class TestAnalysisIntegration:
             patch("soundlab.analysis.detect_key", return_value=mock_key_result),
             patch("soundlab.analysis.measure_loudness", return_value=mock_loudness_result),
             patch("soundlab.analysis.analyze_spectral", return_value=mock_spectral_result),
-            patch("soundlab.analysis.detect_onsets", return_value=MagicMock()),
+            patch("soundlab.analysis.detect_onsets", return_value=OnsetResult()),
         ):
             result = analyze_audio(sample_audio_file)
 
@@ -191,7 +192,7 @@ class TestAnalysisIntegration:
             patch("soundlab.analysis.detect_key", return_value=mock_key_result),
             patch("soundlab.analysis.measure_loudness", return_value=mock_loudness_result),
             patch("soundlab.analysis.analyze_spectral", return_value=mock_spectral_result),
-            patch("soundlab.analysis.detect_onsets", return_value=MagicMock()),
+            patch("soundlab.analysis.detect_onsets", return_value=OnsetResult()),
         ):
             result = analyze_audio(sample_audio_file)
 
@@ -214,7 +215,7 @@ class TestAnalysisIntegration:
             patch("soundlab.analysis.detect_key", return_value=mock_key_result),
             patch("soundlab.analysis.measure_loudness", return_value=mock_loudness_result),
             patch("soundlab.analysis.analyze_spectral", return_value=mock_spectral_result),
-            patch("soundlab.analysis.detect_onsets", return_value=MagicMock()),
+            patch("soundlab.analysis.detect_onsets", return_value=OnsetResult()),
         ):
             result = analyze_audio(str(sample_audio_file))
 
@@ -237,7 +238,7 @@ class TestAnalysisIntegration:
             patch("soundlab.analysis.detect_key", return_value=mock_key_result),
             patch("soundlab.analysis.measure_loudness", return_value=mock_loudness_result),
             patch("soundlab.analysis.analyze_spectral", return_value=mock_spectral_result),
-            patch("soundlab.analysis.detect_onsets", return_value=MagicMock()),
+            patch("soundlab.analysis.detect_onsets", return_value=OnsetResult()),
         ):
             result = analyze_audio(sample_audio_file)
 
@@ -270,7 +271,7 @@ class TestAnalysisIntegration:
             patch("soundlab.analysis.detect_key", return_value=mock_key_result),
             patch("soundlab.analysis.measure_loudness", return_value=mock_loudness_result),
             patch("soundlab.analysis.analyze_spectral", return_value=mock_spectral_result),
-            patch("soundlab.analysis.detect_onsets", return_value=MagicMock()),
+            patch("soundlab.analysis.detect_onsets", return_value=OnsetResult()),
         ):
             result = analyze_audio(sample_audio_file)
 

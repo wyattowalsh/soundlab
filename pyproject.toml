@@ -27,6 +27,9 @@ dev = [
 [tool.uv.workspace]
 members = ["packages/*"]
 
+[tool.uv.extra-build-dependencies]
+crepe = ["setuptools>=70,<81"]
+
 [tool.uv.sources]
 soundlab = { workspace = true }
 

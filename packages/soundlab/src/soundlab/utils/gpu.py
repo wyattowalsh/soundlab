@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import os
 
+from soundlab.core.exceptions import ConfigurationError
+
 try:
     import torch
 except Exception:  # pragma: no cover - torch may be unavailable in minimal envs
@@ -24,7 +26,14 @@ def get_device(mode: str) -> str:
     if normalized in {"cpu", "force_cpu"}:
         return "cpu"
 
-    if normalized in {"cuda", "gpu", "force_gpu"}:
+    if normalized in {"force_gpu", "force_cuda"}:
+        if not is_cuda_available():
+            raise ConfigurationError(
+                "force_gpu requires CUDA, which is not available on this runtime."
+            )
+        return "cuda"
+
+    if normalized in {"cuda", "gpu"}:
         return "cuda" if is_cuda_available() else "cpu"
 
     if normalized in {"auto", ""}:

@@ -13,6 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Stereo duration uses the time axis. Reading `StemResult.instrumental` no longer writes a file; vocals-only exposes `no_vocals`.
 - Drum MIDI notes are written on channel 9. Basic Pitch `predict` receives the ICASSP model path and a millisecond note length.
 - The studio notebook compiles, passes the uploaded song into separation, and installs this package from `packages/soundlab`.
+- `analyze_audio` keeps onset times. Loudness uses the declared `pyloudnorm` dependency.
+- `SOUNDLAB_SEED` seeds Python, NumPy, and Torch. `force_gpu` reports a missing CUDA device instead of selecting CPU.
+- Studio defaults leave Drive, resampling, channel matching, peak normalization, excerpts, silence gating, MIDI quantization, and loudness export off until selected.
+- `soundlab tts` calls `TTSGenerator` when the voice extra imports.
 
 ### Changed
 

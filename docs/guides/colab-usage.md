@@ -31,7 +31,7 @@ The notebook also runs on CPU. It reports the device it actually sees. A GPU run
 ```python
 resume_run_id = ""  # empty starts a new run
 cache_root = "/content/drive/MyDrive/soundlab_cache"
-enable_drive_cache = True
+enable_drive_cache = False
 ```
 
 | Control | Role |
@@ -73,7 +73,7 @@ The upload cell accepts WAV, MP3, FLAC, OGG, AIFF, and M4A. It shows duration, s
 ```python
 target_sample_rate = 44100
 target_channels = 2          # 1 or 2
-normalize_audio = True
+normalize_audio = False
 normalization_level = -1.0   # peak level in dB, used when normalize_audio is true
 ```
 
@@ -82,7 +82,7 @@ normalization_level = -1.0   # peak level in dB, used when normalize_audio is tr
 ### Excerpt
 
 ```python
-use_excerpt = True
+use_excerpt = False
 excerpt_start_seconds = 30.0
 excerpt_duration_seconds = 30.0
 auto_select_excerpt = False
@@ -138,7 +138,7 @@ rerun_full_on_best = True
 
 ```python
 silence_threshold = 1e-4
-enable_silence_filtering = True
+enable_silence_filtering = False
 clipping_threshold = 0.99
 max_clipping_ratio = 0.01
 prepare_mono_for_amt = True
@@ -169,7 +169,7 @@ min_velocity = 1
 filter_short_notes = True
 detect_tempo_from_audio = True
 fallback_bpm = 120.0
-enable_quantization = True
+enable_quantization = False
 quantize_strength = 0.5
 quantize_grid = "1/16"  # "1/4", "1/8", "1/16", "1/32"
 enable_program_mapping = True
@@ -208,7 +208,7 @@ export_analysis = True
 export_config = True
 export_qa_report = True
 stem_format = "wav"  # wav, mp3, flac
-normalize_stems = True
+normalize_stems = False
 normalization_lufs = -14.0
 create_zip_archive = True
 zip_filename = "soundlab_export"

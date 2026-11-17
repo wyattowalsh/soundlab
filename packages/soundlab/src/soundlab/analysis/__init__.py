@@ -31,13 +31,14 @@ def analyze_audio(path: str | Path) -> AnalysisResult:
     key = detect_key(samples, sr)
     loudness = measure_loudness(samples, sr)
     spectral = analyze_spectral(samples, sr)
-    _onsets = detect_onsets(samples, sr)
+    onsets = detect_onsets(samples, sr)
 
     return AnalysisResult(
         tempo=tempo,
         key=key,
         loudness=loudness,
         spectral=spectral,
+        onsets=onsets,
     )
 
 

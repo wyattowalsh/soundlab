@@ -22,13 +22,24 @@ def _prepare_loudness_input(y: NDArray[np.float32]) -> NDArray[np.float32]:
 
 
 def measure_loudness(y: NDArray[np.float32], sr: int) -> LoudnessResult:
-    """Measure integrated loudness using pyloudnorm."""
-    pyln = importlib.import_module("pyloudnorm")
+    """Measure integrated loudness with pyloudnorm.
+
+    ``dynamic_range`` is peak level in dBFS minus integrated LUFS. It is a
+    crest proxy, not an ITU loudness-range measurement.
+    """
+    try:
+        pyln = importlib.import_module("pyloudnorm")
+    except ImportError as exc:
+        raise ImportError(
+            "pyloudnorm is required for loudness measurement. "
+            'Install this package with its core dependencies, or `uv pip install "pyloudnorm>=0.1.1,<0.2"`.'
+        ) from exc
 
     audio = _prepare_loudness_input(y)
     meter = pyln.Meter(sr)
     lufs = float(meter.integrated_loudness(audio))
-    dynamic_range = float(meter.loudness_range(audio))
-    peak = float(np.max(np.abs(y))) if y.size else 0.0
+    peak = float(np.max(np.abs(audio))) if audio.size else 0.0
+    peak_db = 20.0 * float(np.log10(peak + 1e-12))
+    dynamic_range = peak_db - lufs if np.isfinite(lufs) else 0.0
 
-    return LoudnessResult(lufs=lufs, dynamic_range=dynamic_range, peak=peak)
+    return LoudnessResult(lufs=lufs, dynamic_range=float(dynamic_range), peak=peak)

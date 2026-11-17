@@ -7,6 +7,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import ClassVar
 
+from soundlab.utils.seed import apply_configured_seed
+
 
 @dataclass(frozen=True)
 class SoundLabConfig:
@@ -26,6 +28,7 @@ class SoundLabConfig:
         gpu_mode = os.getenv("SOUNDLAB_GPU_MODE", "auto")
         cache_dir = Path(os.getenv("SOUNDLAB_CACHE_DIR", "~/.cache/soundlab")).expanduser()
         output_dir = Path(os.getenv("SOUNDLAB_OUTPUT_DIR", "./outputs")).expanduser()
+        apply_configured_seed()
         return cls(
             log_level=log_level,
             gpu_mode=gpu_mode,

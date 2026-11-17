@@ -41,6 +41,7 @@ dependencies = [
     "pydub>=0.25,<0.26",
     "pydantic>=2.7,<3",
     "numpy>=1.26,<3",
+    "pyloudnorm>=0.1.1,<0.2",
     "tenacity>=8.3,<10",
     "loguru>=0.7,<0.8",
     "tqdm>=4.66,<5",
@@ -90,6 +91,9 @@ include = ["/src"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/soundlab"]
+
+[tool.uv.extra-build-dependencies]
+crepe = ["setuptools>=70,<81"]
 
 [dependency-groups]
 dev = [

@@ -7,6 +7,8 @@ from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from soundlab.analysis.onsets import OnsetResult
+
 
 class MusicalKey(StrEnum):
     """Musical key names."""
@@ -118,6 +120,7 @@ class AnalysisResult(BaseModel):
     key: KeyDetectionResult | None = None
     loudness: LoudnessResult | None = None
     spectral: SpectralResult | None = None
+    onsets: OnsetResult | None = None
 
 
 __all__ = [

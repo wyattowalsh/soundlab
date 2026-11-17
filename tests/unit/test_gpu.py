@@ -1,5 +1,7 @@
 """Tests for GPU utilities."""
 
+import pytest
+
 import soundlab.utils.gpu as gpu
 
 
@@ -42,7 +44,17 @@ def test_get_device_falls_back_when_unavailable(monkeypatch: object) -> None:
     monkeypatch.delenv("SOUNDLAB_GPU_MODE", raising=False)
 
     assert gpu.is_cuda_available() is False
-    assert gpu.get_device("force_gpu") == "cpu"
+    assert gpu.get_device("cuda") == "cpu"
+
+
+def test_force_gpu_reports_missing_cuda(monkeypatch: object) -> None:
+    from soundlab.core.exceptions import ConfigurationError
+
+    monkeypatch.setattr(gpu, "torch", _FakeTorch(False))
+    monkeypatch.delenv("SOUNDLAB_GPU_MODE", raising=False)
+
+    with pytest.raises(ConfigurationError, match="force_gpu"):
+        gpu.get_device("force_gpu")
 
 
 def test_get_free_vram_and_clear_cache(monkeypatch: object) -> None:
