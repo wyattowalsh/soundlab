@@ -17,6 +17,13 @@ _MAJOR_PROFILE = np.array([6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39,
 _MINOR_PROFILE = np.array([6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17])
 
 
+def _finite_correlation(left: NDArray[np.floating], right: NDArray[np.floating]) -> float:
+    correlation = float(np.corrcoef(left, right)[0, 1])
+    if not np.isfinite(correlation):
+        return 0.0
+    return correlation
+
+
 def _to_mono(y: NDArray[np.float32]) -> NDArray[np.float32]:
     if y.ndim == 1:
         return y
@@ -39,6 +46,16 @@ def detect_key(
 
     chroma = librosa.feature.chroma_cqt(y=mono, sr=sr, hop_length=hop_length)
     chroma_avg = np.mean(chroma, axis=1)
+    if (
+        chroma_avg.size == 0
+        or not np.isfinite(chroma_avg).all()
+        or float(np.sum(np.abs(chroma_avg))) < 1e-8
+    ):
+        return KeyDetectionResult(
+            key=MusicalKey.C,
+            mode=Mode.MAJOR,
+            confidence=0.0,
+        )
 
     chroma_avg = chroma_avg / (np.linalg.norm(chroma_avg) + 1e-8)
     major_norm = _MAJOR_PROFILE / np.linalg.norm(_MAJOR_PROFILE)
@@ -52,8 +69,8 @@ def detect_key(
 
     for i, key in enumerate(keys):
         rolled = np.roll(chroma_avg, -i)
-        maj_corr = float(np.corrcoef(rolled, major_norm)[0, 1])
-        min_corr = float(np.corrcoef(rolled, minor_norm)[0, 1])
+        maj_corr = _finite_correlation(rolled, major_norm)
+        min_corr = _finite_correlation(rolled, minor_norm)
 
         all_correlations[f"{key.value} major"] = maj_corr
         all_correlations[f"{key.value} minor"] = min_corr
@@ -69,6 +86,7 @@ def detect_key(
             best_mode = Mode.MINOR
 
     confidence = (best_corr + 1) / 2
+    confidence = float(min(1.0, max(0.0, confidence)))
 
     return KeyDetectionResult(
         key=best_key,

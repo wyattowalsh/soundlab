@@ -19,6 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `soundlab tts` calls `TTSGenerator` when the voice extra imports.
 - Reverb wet and dry settings reach pedalboard as `wet_level` and `dry_level`. High-pass and low-pass Q is applied by an RBJ biquad inside `EffectsChain`. Asking pedalboard itself for a non-default Q raises, and any other plugin parameter the backend cannot store raises instead of being ignored.
 - `soundlab effects` can apply an explicit `--gain-db` and `--highpass-hz`. With neither option, it copies the audio.
+- CREPE uses `onset_thresh` as the onset delta and `frame_thresh` as the confidence gate. `DrumTranscriptionConfig` reaches the drum transcriber, including its pitches and velocity scale.
+- Key detection on silence or an undefined correlation returns a confidence inside 0–1 instead of failing validation. A Basic Pitch MIDI file that exists but cannot be read raises that read error.
 
 ### Changed
 

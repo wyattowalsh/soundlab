@@ -276,3 +276,23 @@ class TestToMono:
 
         expected = np.ones(10, dtype=np.float32)  # Average = 1.0
         assert np.allclose(result, expected)
+
+
+def test_silence_reports_no_key_confidence() -> None:
+    from soundlab.analysis.key import detect_key
+
+    result = detect_key(np.zeros(22050, dtype=np.float32), 22050)
+
+    assert result.confidence == 0.0
+    assert result.key is MusicalKey.C
+
+
+def test_undefined_correlation_stays_inside_the_confidence_range() -> None:
+    from soundlab.analysis.key import detect_key
+
+    librosa = MagicMock()
+    librosa.feature.chroma_cqt.return_value = np.ones((12, 8), dtype=np.float32)
+    with patch("soundlab.analysis.key.importlib.import_module", return_value=librosa):
+        result = detect_key(np.ones(1000, dtype=np.float32), 22050)
+
+    assert 0.0 <= result.confidence <= 1.0

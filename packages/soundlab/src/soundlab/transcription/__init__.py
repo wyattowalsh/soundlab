@@ -51,7 +51,7 @@ def get_transcriber(
     backend: Literal["auto", "basic_pitch", "crepe", "drum"] = "auto",
     for_drums: bool = False,
     config: TranscriptionConfig | None = None,
-    drum_config: "DrumConfig | None" = None,
+    drum_config: DrumConfig | DrumTranscriptionConfig | None = None,
 ) -> TranscriberBackend:
     """Get appropriate transcriber backend.
 
@@ -68,7 +68,8 @@ def get_transcriber(
         for_drums: If True and backend="auto", use drum backend. Ignored when
             backend is explicitly specified.
         config: Configuration for melodic transcribers (MIDITranscriber, CREPETranscriber).
-        drum_config: Configuration for DrumTranscriber. If None, defaults are used.
+        drum_config: ``DrumConfig`` or the exported ``DrumTranscriptionConfig``.
+            If None, detector defaults are used.
 
     Returns:
         Transcriber instance appropriate for the selected backend.

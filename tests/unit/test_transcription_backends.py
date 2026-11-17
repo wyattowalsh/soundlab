@@ -513,6 +513,35 @@ class TestCREPETranscriber:
 # --------------------------------------------------------------------------- #
 
 
+    def test_crepe_honors_onset_and_frame_thresholds(
+        self,
+        mock_crepe_module: MagicMock,
+        mock_librosa_for_crepe: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """CREPE onset delta and confidence gate come from the transcription config."""
+        from soundlab.transcription.crepe_backend import CREPETranscriber
+        from soundlab.transcription.models import TranscriptionConfig
+
+        audio_file = tmp_path / "melody.wav"
+        audio_file.touch()
+        config = TranscriptionConfig(onset_thresh=0.7, frame_thresh=0.9)
+
+        with (
+            patch("soundlab.transcription.crepe_backend._load_crepe", return_value=mock_crepe_module),
+            patch(
+                "soundlab.transcription.crepe_backend._load_librosa",
+                return_value=mock_librosa_for_crepe,
+            ),
+            patch("soundlab.transcription.crepe_backend.save_midi"),
+        ):
+            result = CREPETranscriber(config=config).transcribe(audio_file, tmp_path / "output")
+
+        detect = mock_librosa_for_crepe.onset.onset_detect
+        assert detect.call_args.kwargs["delta"] == 0.7
+        assert result.notes == []
+
+
 class TestTranscriptionBackendHelpers:
     """Tests for shared helper functions."""
 
@@ -726,3 +755,40 @@ class TestMIDITranscriberBasicPitchContract:
             DrumTranscriber(config=DrumConfig(onset_thresh=0.7)).transcribe(audio, output)
 
         assert onsets.call_args.kwargs["onset_threshold"] == 0.7
+
+    def test_exported_drum_config_reaches_the_transcriber(self, tmp_path: Path) -> None:
+        """DrumTranscriptionConfig pitches, onset, and velocity scale are applied."""
+        from soundlab.transcription.drum_backend import DrumTranscriber
+
+        audio = tmp_path / "drums.wav"
+        audio.write_bytes(b"RIFF")
+        output = tmp_path / "out"
+        mock_librosa = MagicMock()
+        mock_librosa.load.return_value = (np.zeros(1000, dtype=np.float32), 22050)
+        onsets = MagicMock()
+        onsets.return_value.timestamps = [0.2]
+
+        with (
+            patch("soundlab.transcription.drum_backend._load_librosa", return_value=mock_librosa),
+            patch("soundlab.transcription.drum_backend.detect_onsets", onsets),
+            patch(
+                "soundlab.transcription.drum_backend._compute_spectral_centroid",
+                return_value=80.0,
+            ),
+            patch(
+                "soundlab.transcription.drum_backend._compute_onset_strengths",
+                return_value=[1.0],
+            ),
+            patch("soundlab.transcription.drum_backend.save_midi"),
+        ):
+            result = DrumTranscriber(
+                config=DrumTranscriptionConfig(
+                    onset_threshold=0.42,
+                    kick_note=40,
+                    velocity_scale=0.5,
+                )
+            ).transcribe(audio, output)
+
+        assert onsets.call_args.kwargs["onset_threshold"] == 0.42
+        assert result.notes[0].pitch == 40
+        assert result.notes[0].velocity == 64

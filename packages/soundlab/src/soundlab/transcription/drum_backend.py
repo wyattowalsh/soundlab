@@ -12,7 +12,12 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from soundlab.analysis.onsets import detect_onsets
 from soundlab.io.midi_io import MIDIData, MIDINote, save_midi
-from soundlab.transcription.models import MIDIResult, NoteEvent, TranscriptionConfig
+from soundlab.transcription.models import (
+    DrumTranscriptionConfig,
+    MIDIResult,
+    NoteEvent,
+    TranscriptionConfig,
+)
 
 if TYPE_CHECKING:
     from numpy.typing import NDArray
@@ -44,8 +49,8 @@ class DrumConfig(BaseModel):
     kick_pitch: Annotated[int, Field(ge=0, le=127)] = DRUM_KICK
     snare_pitch: Annotated[int, Field(ge=0, le=127)] = DRUM_SNARE
     hihat_pitch: Annotated[int, Field(ge=0, le=127)] = DRUM_HIHAT_CLOSED
-    low_centroid_max: Annotated[float, Field(ge=50.0, le=500.0)] = CENTROID_LOW_MAX
-    mid_centroid_max: Annotated[float, Field(ge=200.0, le=2000.0)] = CENTROID_MID_MAX
+    low_centroid_max: Annotated[float, Field(ge=0.0)] = CENTROID_LOW_MAX
+    mid_centroid_max: Annotated[float, Field(ge=0.0)] = CENTROID_MID_MAX
 
 
 def _load_librosa():
@@ -152,6 +157,32 @@ def _normalize_strengths_to_velocities(strengths: list[float]) -> list[int]:
     return velocities
 
 
+def _coerce_drum_config(
+    config: DrumConfig | DrumTranscriptionConfig | None,
+) -> tuple[DrumConfig, float]:
+    """Return the detector config and the velocity scale to apply.
+
+    ``DrumTranscriptionConfig`` is the exported configuration. Its onset,
+    duration, pitch, and centroid fields drive the detector, and its
+    ``velocity_scale`` is applied after velocity normalization. ``DrumConfig``
+    keeps a scale of 1 so existing detector settings are unchanged.
+    """
+    if isinstance(config, DrumTranscriptionConfig):
+        return (
+            DrumConfig(
+                onset_thresh=config.onset_threshold,
+                note_duration=config.min_note_length,
+                kick_pitch=config.kick_note,
+                snare_pitch=config.snare_note,
+                hihat_pitch=config.hihat_closed_note,
+                low_centroid_max=config.kick_max_centroid,
+                mid_centroid_max=config.snare_max_centroid,
+            ),
+            config.velocity_scale,
+        )
+    return config or DrumConfig(), 1.0
+
+
 def _default_midi_path(audio_path: Path, output_dir: Path) -> Path:
     """Generate default MIDI output path."""
     return output_dir / f"{audio_path.stem}_drums.mid"
@@ -160,8 +191,8 @@ def _default_midi_path(audio_path: Path, output_dir: Path) -> Path:
 class DrumTranscriber:
     """Drum transcription using onset detection and spectral classification."""
 
-    def __init__(self, config: DrumConfig | None = None) -> None:
-        self.config = config or DrumConfig()
+    def __init__(self, config: DrumConfig | DrumTranscriptionConfig | None = None) -> None:
+        self.config, self._velocity_scale = _coerce_drum_config(config)
 
     def transcribe(self, audio_path: str | Path, output_dir: str | Path) -> MIDIResult:
         """Transcribe drum hits from an audio file to MIDI.
@@ -221,7 +252,8 @@ class DrumTranscriber:
                 y, sr, onset_time, self.config.centroid_window
             )
             pitch = _classify_drum_hit(centroid, self.config)
-            velocity = velocities[i] if i < len(velocities) else 64
+            raw_velocity = velocities[i] if i < len(velocities) else 64
+            velocity = _clamp_velocity(raw_velocity * self._velocity_scale)
 
             end_time = onset_time + self.config.note_duration
 

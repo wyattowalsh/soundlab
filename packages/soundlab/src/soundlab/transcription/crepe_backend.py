@@ -111,6 +111,7 @@ class CREPETranscriber:
             sr=sr,
             hop_length=hop_length,
             backtrack=True,
+            delta=self.config.onset_thresh,
         )
         onset_times = librosa.frames_to_time(onset_frames, sr=sr, hop_length=hop_length)
 
@@ -248,8 +249,8 @@ class CREPETranscriber:
                 y, sr, float(onset), note_end, crepe
             )
 
-            # Skip if no valid pitch or low confidence
-            if freq <= 0 or confidence < 0.3:
+            # frame_thresh is the confidence gate for this backend.
+            if freq <= 0 or confidence < self.config.frame_thresh:
                 continue
 
             # Filter by frequency range

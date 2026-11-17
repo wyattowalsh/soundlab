@@ -9,6 +9,7 @@ from typing import Any
 
 import numpy as np
 
+from soundlab.io.midi_io import load_midi
 from soundlab.transcription.models import MIDIResult, NoteEvent, TranscriptionConfig
 
 
@@ -126,15 +127,9 @@ def _notes_from_basic_pitch(note_events: Any) -> list[NoteEvent]:
 
 
 def _notes_from_midi(midi_path: Path) -> list[NoteEvent]:
-    try:
-        from soundlab.io.midi_io import load_midi
-    except Exception:
+    if not midi_path.is_file():
         return []
-
-    try:
-        midi_data = load_midi(midi_path)
-    except Exception:
-        return []
+    midi_data = load_midi(midi_path)
 
     return [
         NoteEvent(
