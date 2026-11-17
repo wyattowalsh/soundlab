@@ -5,6 +5,27 @@ All notable changes to SoundLab will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- Stem files are named from the Demucs model's source order. A float32 stem request is not saved as 24-bit PCM.
+- Stereo duration uses the time axis. Reading `StemResult.instrumental` no longer writes a file; vocals-only exposes `no_vocals`.
+- Drum MIDI notes are written on channel 9. Basic Pitch `predict` receives the ICASSP model path and a millisecond note length.
+- The studio notebook compiles, passes the uploaded song into separation, and installs this package from `packages/soundlab`.
+
+### Changed
+
+- Docs name the workspace root `soundlab-workspace` and state that `uv sync` without `--all-packages` does not install the library. Workspace sync is `uv sync --all-packages`, with `--extra notebook` when the notebook extra is required. A local library install that leaves the `all` extra unselected is `uv pip install -e "packages/soundlab[notebook]"`.
+- Extras are documented on `packages/soundlab`. Git installs use `#subdirectory=packages/soundlab`.
+- Status text matches the tree: the package is Beta, PyPI publication is disabled, the runtime version is `0.1.0` (`soundlab.__version__`), and package metadata is `1.0.0`. The PyPI project named `soundlab` is a different project.
+- Quickstart and package README examples use `AudioSegment.duration_seconds`, `save_audio(segment, path)`, `EffectsChain.add` with `process_array` or `process(input_path, output_path)`, `get_device(mode)`, and `TTSGenerator.generate(TTSConfig)`.
+- The extension guide points at `EffectConfig.to_plugin()` and `SeparatorBackend.separate(mix_wav, output_dir)`.
+- The Colab guide uses the studio notebook controls, including `target_sample_rate`, `normalize_audio`, `normalization_level`, `separation_model`, `segment_length`, and `install_from` values `github_main` and `github_dev`.
+- Install docs no longer tell readers to resolve a lockfile. This repository has no `uv.lock`.
+
+The `[1.0.0]` section below is the historical note from 2026-01-09, including its production-status wording. Current status is this Unreleased section.
+
 ## [1.0.0] - 2026-01-09
 
 ### Added
@@ -81,8 +102,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Basic Pitch transcription requires Python <3.12 (upstream TensorFlow limitation)
 - CREPE backend available for Python 3.12+ users as melodic transcription alternative
 - Drum transcription works on all supported Python versions (no TensorFlow dependency)
-- Voice module requires optional `voice` extras: `pip install soundlab[voice]`
-- Visualization features require optional `visualization` extras: `pip install soundlab[visualization]`
+- Voice and visualization extras install from this repository: `uv pip install -e "packages/soundlab[voice]"` and `uv pip install -e "packages/soundlab[visualization]"`. Do not `pip install soundlab`.
 
 ## [0.1.0] - 2026-01-08
 

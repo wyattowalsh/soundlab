@@ -35,13 +35,22 @@ def detect_onsets(
     sr: int,
     *,
     hop_length: int = 512,
+    onset_threshold: float | None = None,
 ) -> OnsetResult:
     """Detect onsets and return timing statistics."""
     librosa = importlib.import_module("librosa")
     mono = _to_mono(y)
 
     onset_env = librosa.onset.onset_strength(y=mono, sr=sr, hop_length=hop_length)
-    onset_frames = librosa.onset.onset_detect(onset_envelope=onset_env, sr=sr)
+    detect_kwargs: dict[str, float] = {}
+    if onset_threshold is not None:
+        detect_kwargs["delta"] = onset_threshold
+    onset_frames = librosa.onset.onset_detect(
+        onset_envelope=onset_env,
+        sr=sr,
+        hop_length=hop_length,
+        **detect_kwargs,
+    )
     onset_times = librosa.frames_to_time(onset_frames, sr=sr, hop_length=hop_length)
 
     timestamps = [float(value) for value in np.asarray(onset_times).tolist()]

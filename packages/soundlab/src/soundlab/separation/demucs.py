@@ -11,7 +11,12 @@ from loguru import logger
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 from soundlab.core.exceptions import GPUMemoryError, ModelNotFoundError, ProcessingError
-from soundlab.separation.models import SeparationConfig, StemResult
+from soundlab.separation.models import (
+    SeparationConfig,
+    StemResult,
+    output_stem_names,
+    stem_audio_subtype,
+)
 from soundlab.utils.gpu import get_device, get_free_vram_gb
 
 if TYPE_CHECKING:
@@ -112,11 +117,13 @@ class StemSeparator:
                 progress=progress_callback is not None,
             )[0]
 
-        stem_names = self.config.model.stems
-        if self.config.two_stems:
-            if self.config.two_stems not in stem_names:
-                raise ProcessingError(f"Invalid two_stems target: {self.config.two_stems}")
-            target_index = stem_names.index(self.config.two_stems)
+        source_names = [str(name) for name in getattr(model, "sources", [])]
+        stem_names, target_index = output_stem_names(
+            source_names,
+            len(sources),
+            self.config.two_stems,
+        )
+        if target_index is not None:
             target = sources[target_index]
             remaining = torch.cat(
                 [
@@ -127,7 +134,6 @@ class StemSeparator:
             )
             complement = remaining.sum(dim=0)
             sources = torch.stack([target, complement], dim=0)
-            stem_names = [self.config.two_stems, f"no_{self.config.two_stems}"]
 
         stems: dict[str, Path] = {}
         for i, stem_name in enumerate(stem_names):
@@ -154,6 +160,6 @@ class StemSeparator:
         if audio.ndim == 2:
             audio = audio.T
 
-        subtype = "PCM_24" if self.config.int24 else "FLOAT" if self.config.float32 else "PCM_16"
+        subtype = stem_audio_subtype(float32=self.config.float32, int24=self.config.int24)
         samplerate = self._model.samplerate if self._model is not None else 44100
         sf.write(path, audio, samplerate, subtype=subtype)

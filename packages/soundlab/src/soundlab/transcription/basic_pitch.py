@@ -19,6 +19,49 @@ def _load_basic_pitch() -> Any:
         raise ImportError("basic-pitch is required for MIDI transcription") from exc
 
 
+def _basic_pitch_model_path(inference: Any) -> Any:
+    """Resolve ``model_or_model_path`` for basic-pitch 0.3.
+
+    Coded against basic-pitch 0.3.1 ``basic_pitch.inference.predict`` (the 0.3.0
+    signature matches; 0.3.2 only adds a default):
+
+        predict(
+            audio_path,
+            model_or_model_path,  # required in 0.3.0 and 0.3.1
+            onset_threshold=0.5,
+            frame_threshold=0.3,
+            minimum_note_length=127.70,  # milliseconds; divided by 1000
+            minimum_frequency=None,
+            maximum_frequency=None,
+            multiple_pitch_bends=False,
+            melodia_trick=True,
+            debug_file=None,
+            midi_tempo=120,
+        )
+
+    ``ICASSP_2022_MODEL_PATH`` lives on the ``basic_pitch`` package in 0.3.0 and
+    0.3.1. 0.3.2 also imports it into ``basic_pitch.inference``.
+    """
+    package_path = None
+    try:
+        package = importlib.import_module("basic_pitch")
+    except Exception:
+        package = None
+    else:
+        package_path = getattr(package, "ICASSP_2022_MODEL_PATH", None)
+    if package_path is not None:
+        return package_path
+
+    inference_path = getattr(inference, "ICASSP_2022_MODEL_PATH", None)
+    if inference_path is not None:
+        return inference_path
+
+    raise ImportError(
+        "basic-pitch 0.3 predict requires model_or_model_path, "
+        "but ICASSP_2022_MODEL_PATH was not found."
+    )
+
+
 def _default_midi_path(audio_path: Path, output_dir: Path) -> Path:
     return output_dir / f"{audio_path.stem}.mid"
 
@@ -44,13 +87,16 @@ def _notes_from_basic_pitch(note_events: Any) -> list[NoteEvent]:
     notes: list[NoteEvent] = []
 
     if array is not None and array.ndim >= 2 and array.shape[1] >= 4:
-        for start, end, pitch, velocity in array:
+        for start, end, pitch, amplitude in array[:, :4]:
+            velocity = float(amplitude)
+            if 0.0 <= velocity <= 1.0:
+                velocity *= 127.0
             notes.append(
                 NoteEvent(
                     start=float(start),
                     end=float(end),
-                    pitch=round(pitch),
-                    velocity=_clamp_velocity(float(velocity)),
+                    pitch=round(float(pitch)),
+                    velocity=_clamp_velocity(velocity),
                 )
             )
         return notes
@@ -120,22 +166,26 @@ class MIDITranscriber:
         start_time = time.perf_counter()
 
         if hasattr(inference, "predict"):
+            model_path = getattr(inference, "ICASSP_2022_MODEL_PATH", None)
+            if model_path is None:
+                raise ImportError(
+                    "basic-pitch did not provide ICASSP_2022_MODEL_PATH. "
+                    "predict requires model_or_model_path."
+                )
+            minimum_note_length_ms = self.config.min_note_length * 1000.0
             _model_output, midi_data, note_events = inference.predict(
                 str(source),
+                model_path,
                 onset_threshold=self.config.onset_thresh,
                 frame_threshold=self.config.frame_thresh,
-                minimum_note_length=self.config.min_note_length,
+                minimum_note_length=minimum_note_length_ms,
                 minimum_frequency=self.config.min_freq,
                 maximum_frequency=self.config.max_freq,
             )
 
-            if midi_data is not None:
-                try:
-                    midi_data.write(str(midi_path))
-                except Exception:
-                    midi_path = _pick_midi_file(output, midi_path)
-            else:
-                midi_path = _pick_midi_file(output, midi_path)
+            if midi_data is None:
+                raise RuntimeError(f"basic-pitch did not return MIDI for {source}")
+            midi_data.write(str(midi_path))
         elif hasattr(inference, "predict_and_save"):
             inference.predict_and_save(
                 [str(source)],

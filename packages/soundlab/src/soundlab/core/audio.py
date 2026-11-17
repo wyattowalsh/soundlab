@@ -89,7 +89,14 @@ class AudioSegment(BaseModel):
 
     @property
     def duration_seconds(self) -> float:
-        return len(self.samples) / self.sample_rate
+        """Frame count on the time axis divided by the sample rate.
+
+        Mono samples are one-dimensional. Multi-channel samples are channels-first,
+        so the time axis is ``shape[-1]``.
+        """
+        samples = self.samples
+        frames = samples.shape[-1] if samples.ndim > 1 else len(samples)
+        return float(frames) / self.sample_rate
 
     @property
     def channels(self) -> int:

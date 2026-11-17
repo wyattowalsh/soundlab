@@ -10,6 +10,8 @@ import numpy as np
 import soundfile as sf
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 
+from soundlab.core.exceptions import ProcessingError
+
 
 class DemucsModel(StrEnum):
     """Available Demucs models."""
@@ -30,6 +32,37 @@ class DemucsModel(StrEnum):
         if self == DemucsModel.HTDEMUCS_6S:
             return [*base, "piano", "guitar"]
         return base
+
+
+def stem_audio_subtype(*, float32: bool, int24: bool) -> str:
+    """Choose a soundfile subtype. An explicit float32 request wins over int24."""
+    if float32:
+        return "FLOAT"
+    if int24:
+        return "PCM_24"
+    return "PCM_16"
+
+
+def output_stem_names(
+    source_names: list[str],
+    source_count: int,
+    two_stems: str | None,
+) -> tuple[list[str], int | None]:
+    """Name Demucs tensors from ``model.sources`` order.
+
+    Returns the output stem names and, when collapsing to two stems, the
+    index of the requested source. The index is into the original source list.
+    """
+    if len(source_names) != source_count:
+        raise ProcessingError(
+            f"Demucs returned {source_count} sources but model.sources lists "
+            f"{len(source_names)} names"
+        )
+    if not two_stems:
+        return list(source_names), None
+    if two_stems not in source_names:
+        raise ProcessingError(f"Invalid two_stems target: {two_stems}")
+    return [two_stems, f"no_{two_stems}"], source_names.index(two_stems)
 
 
 class SeparationConfig(BaseModel):
@@ -70,57 +103,61 @@ class StemResult(BaseModel):
 
     @property
     def instrumental(self) -> Path | None:
-        """Combined non-vocal stems (computed on demand).
+        """Return an existing instrumental or vocals-only complement path.
 
-        Creates an instrumental track by summing drums, bass, and other stems.
-        The result is cached and saved to {output_dir}/instrumental.wav.
-
-        Returns:
-            Path to the instrumental file, or None if required stems are missing.
+        This property does not write audio. Call ``export_instrumental`` to
+        sum the non-vocal stems into a new file.
         """
-        # Return cached result if available
         if self._instrumental_path is not None:
             return self._instrumental_path
+        for name in ("no_vocals", "instrumental"):
+            path = self.stems.get(name)
+            if path is not None:
+                return path
+        if not self.stems:
+            return None
+        candidate = next(iter(self.stems.values())).parent / "instrumental.wav"
+        if candidate.exists():
+            return candidate
+        return None
 
-        # Identify non-vocal stems to combine
-        instrumental_stems = ["drums", "bass", "other"]
-        available_stems = [s for s in instrumental_stems if s in self.stems]
+    def export_instrumental(self) -> Path | None:
+        """Write a summed instrumental mix and return its path.
 
-        # Need at least one stem to create instrumental
-        if not available_stems:
+        Vocals-only runs already store the complement as ``no_vocals`` and
+        that path is returned without a second write.
+        """
+        if self._instrumental_path is not None:
+            return self._instrumental_path
+        complement = self.stems.get("no_vocals")
+        if complement is not None:
+            object.__setattr__(self, "_instrumental_path", complement)
+            return complement
+
+        instrumental_stems = ["drums", "bass", "other", "piano", "guitar"]
+        available = [name for name in instrumental_stems if name in self.stems]
+        if not available:
             return None
 
-        # Derive output directory from existing stem paths
-        sample_stem_path = next(iter(self.stems.values()))
-        output_dir = sample_stem_path.parent
-
-        # Load and sum audio arrays
+        output_dir = next(iter(self.stems.values())).parent
         combined: np.ndarray | None = None
         sample_rate: int | None = None
-
-        for stem_name in available_stems:
+        for stem_name in available:
             stem_path = self.stems[stem_name]
             if not stem_path.exists():
                 continue
-
             audio_data, sr = sf.read(stem_path)
-
             if combined is None:
                 combined = audio_data
                 sample_rate = sr
             else:
-                # Ensure arrays can be summed (handle length differences)
-                min_len = min(len(combined), len(audio_data))
-                combined = combined[:min_len] + audio_data[:min_len]
+                length = min(len(combined), len(audio_data))
+                combined = combined[:length] + audio_data[:length]
 
-        # Check if we successfully loaded any audio
         if combined is None or sample_rate is None:
             return None
 
-        # Save the instrumental mix
         instrumental_path = output_dir / "instrumental.wav"
         sf.write(instrumental_path, combined, sample_rate)
-
-        # Cache and return the path
         object.__setattr__(self, "_instrumental_path", instrumental_path)
-        return self._instrumental_path
+        return instrumental_path

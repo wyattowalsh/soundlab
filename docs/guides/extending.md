@@ -1,183 +1,105 @@
 # Extending SoundLab
 
-Guide to adding custom effects, analyzers, and voice models.
+How to add an effect, an analyzer, a voice wrapper, or a separation backend.
 
----
+Reusable behavior belongs in `packages/soundlab/src/soundlab/`. The studio notebook is the interactive entrypoint.
 
-## Architecture Overview
-
-SoundLab uses a modular architecture with clear extension points:
-
-```
+```text
 soundlab/
-├── analysis/      # Audio analysis (tempo, key, loudness, spectral)
-├── effects/       # Audio effects (EQ, dynamics, time-based, creative)
-├── separation/    # Stem separation (Demucs backends)
-├── transcription/ # Audio-to-MIDI (Basic Pitch)
-├── voice/         # Voice generation (TTS, SVC)
-├── pipeline/      # Orchestration and QA
-└── core/          # Base types and configuration
+├── analysis/      # tempo, key, loudness, spectral
+├── effects/       # Pedalboard effect configs and EffectsChain
+├── separation/    # Demucs StemSeparator
+├── transcription/ # audio-to-MIDI
+├── voice/         # TTS and SVC
+├── pipeline/      # plans, QA, and backend protocols
+└── core/          # audio models and errors
 ```
 
-Each module follows consistent patterns:
-
-1. **Config models** — Pydantic models for configuration
-2. **Result models** — Pydantic models for outputs
-3. **Processing classes** — Stateful processors with lazy loading
-4. **Utility functions** — Stateless helpers
+A config implements `to_plugin()`, and the chain calls it. Separation backends implement `SeparatorBackend.separate(mix_wav, output_dir)`.
 
 ---
 
-## Adding Custom Effects
+## Add an effect
 
-### 1. Define Effect Configuration
-
-Create a Pydantic model for your effect parameters:
+Subclass `EffectConfig` and implement `to_plugin()`. `EffectsChain._build_board` calls `effect.to_plugin()` for every config passed to `add`.
 
 ```python
-# soundlab/effects/models.py
-from pydantic import BaseModel, Field
+from pydantic import Field
+from pedalboard import Chorus
 
-class FlangerConfig(BaseModel):
-    """Configuration for flanger effect."""
+from soundlab.effects.models import EffectConfig
 
-    rate_hz: float = Field(default=0.5, ge=0.01, le=10.0, description="LFO rate in Hz")
-    depth: float   = Field(default=0.5, ge=0.0, le=1.0, description="Effect depth")
-    feedback: float = Field(default=0.5, ge=-1.0, le=1.0, description="Feedback amount")
-    mix: float     = Field(default=0.5, ge=0.0, le=1.0, description="Wet/dry mix")
 
-    class Config:
-        frozen = True
+class FlangerConfig(EffectConfig):
+    """Chorus settings used as a flanger approximation."""
+
+    rate_hz: float = Field(default=0.5, ge=0.01, le=10.0)
+    depth: float = Field(default=0.5, ge=0.0, le=1.0)
+    feedback: float = Field(default=0.0, ge=0.0, le=1.0)
+    mix: float = Field(default=0.5, ge=0.0, le=1.0)
+
+    def to_plugin(self) -> Chorus:
+        return Chorus(
+            rate_hz=self.rate_hz,
+            depth=self.depth,
+            feedback=self.feedback,
+            mix=self.mix,
+        )
 ```
 
-### 2. Create Plugin Factory
+`EffectConfig` is frozen. Export the new class from `soundlab.effects` and from the package `__init__` when it should be public.
 
-Map your config to a Pedalboard plugin:
-
-```python
-# soundlab/effects/creative.py
-from pedalboard import Chorus  # Flanger can be approximated with Chorus
-
-from soundlab.effects.models import FlangerConfig
-
-
-def create_flanger(config: FlangerConfig):
-    """Create a flanger effect plugin.
-
-    Note: Pedalboard doesn't have native Flanger, so we use Chorus
-    with short delay times to approximate the effect.
-    """
-    return Chorus(
-        rate_hz=config.rate_hz,
-        depth=config.depth,
-        mix=config.mix,
-        feedback=config.feedback,
-    )
-```
-
-### 3. Register in Effects Chain
-
-Add your effect to the chain's plugin registry:
+Use the chain with `add`, then either samples or paths:
 
 ```python
-# soundlab/effects/chain.py
-from soundlab.effects.creative import create_flanger
-from soundlab.effects.models import FlangerConfig
-
-# In EffectsChain._create_plugin method:
-def _create_plugin(self, config: EffectConfig):
-    """Create a Pedalboard plugin from config."""
-    match config:
-        case FlangerConfig():
-            return create_flanger(config)
-        # ... other effects ...
-        case _:
-            raise ValueError(f"Unknown effect config: {type(config)}")
-```
-
-### 4. Export from Module
-
-Add to the public API:
-
-```python
-# soundlab/effects/__init__.py
-from soundlab.effects.models import FlangerConfig
-
-__all__ = [
-    # ... existing exports ...
-    "FlangerConfig",
-]
-```
-
-### 5. Add Tests
-
-```python
-# tests/unit/test_effects_flanger.py
 import numpy as np
-import pytest
 
-from soundlab.effects import EffectsChain, FlangerConfig
+from soundlab import load_audio, save_audio
+from soundlab.effects import EffectsChain
 
+audio = load_audio("vocals.wav")
+chain = EffectsChain().add(FlangerConfig(rate_hz=1.0, depth=0.8))
 
-class TestFlangerEffect:
-    def test_flanger_config_defaults(self):
-        config = FlangerConfig()
-        assert config.rate_hz == 0.5
-        assert config.depth == 0.5
-        assert config.mix == 0.5
+processed = chain.process_array(audio.samples, audio.sample_rate)
+audio.samples = processed
+save_audio(audio, "vocals_flanged.wav")
 
-    def test_flanger_config_validation(self):
-        with pytest.raises(ValueError):
-            FlangerConfig(rate_hz=100.0)  # Exceeds max
+chain.process("vocals.wav", "vocals_flanged.wav")
+```
 
-    def test_flanger_processing(self):
-        config = FlangerConfig(rate_hz=1.0, depth=0.8)
-        chain = EffectsChain([config])
+```python
+def test_flanger_processing() -> None:
+    chain = EffectsChain().add(FlangerConfig(rate_hz=1.0, depth=0.8))
+    audio = np.sin(2 * np.pi * 440 * np.linspace(0, 1, 44100)).astype(np.float32)
+    processed = chain.process_array(audio, 44100)
 
-        audio = np.sin(2 * np.pi * 440 * np.linspace(0, 1, 44100)).astype(np.float32)
-        processed = chain.process(audio, 44100)
-
-        assert processed.shape == audio.shape
-        # Flanger should modulate the signal
-        assert not np.allclose(processed, audio)
+    assert processed.shape == audio.shape
+    assert not np.allclose(processed, audio)
 ```
 
 ---
 
-## Adding Custom Analyzers
+## Add an analyzer
 
-### 1. Define Result Model
+Define a frozen result model, then a function that returns it. `analyze_audio` currently assembles tempo, key, loudness, and spectral results. Call the new function from there when it should be part of that aggregate.
 
 ```python
-# soundlab/analysis/models.py
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class DynamicRangeResult(BaseModel):
-    """Result from dynamic range analysis."""
+    model_config = ConfigDict(frozen=True)
 
     crest_factor_db: float = Field(description="Peak-to-RMS ratio in dB")
-    dynamic_range_db: float = Field(description="Difference between loud and quiet sections")
+    dynamic_range_db: float = Field(description="Loud-section to quiet-section difference")
     compression_ratio: float = Field(description="Estimated compression ratio")
-
-    class Config:
-        frozen = True
 ```
 
-### 2. Implement Analysis Function
-
 ```python
-# soundlab/analysis/dynamics.py
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
 import numpy as np
-
-from soundlab.analysis.models import DynamicRangeResult
-
-if TYPE_CHECKING:
-    from numpy.typing import NDArray
+from numpy.typing import NDArray
 
 
 def analyze_dynamics(
@@ -186,44 +108,24 @@ def analyze_dynamics(
     frame_length: int = 2048,
     hop_length: int = 512,
 ) -> DynamicRangeResult:
-    """Analyze dynamic range of audio signal.
-
-    Args:
-        y: Audio signal (mono or stereo, will be converted to mono)
-        sr: Sample rate
-        frame_length: Analysis frame length
-        hop_length: Hop length between frames
-
-    Returns:
-        DynamicRangeResult with crest factor, dynamic range, and compression estimate
-    """
-    # Convert to mono if stereo
     if y.ndim == 2:
         y = np.mean(y, axis=0)
 
-    # Calculate peak and RMS
     peak = np.max(np.abs(y))
     rms = np.sqrt(np.mean(y**2))
-
-    # Crest factor (peak-to-RMS ratio)
     crest_factor_db = 20 * np.log10(peak / (rms + 1e-10))
 
-    # Frame-wise RMS for dynamic range
     n_frames = (len(y) - frame_length) // hop_length + 1
     frame_rms = np.zeros(n_frames)
-
     for i in range(n_frames):
         start = i * hop_length
         frame = y[start : start + frame_length]
         frame_rms[i] = np.sqrt(np.mean(frame**2))
 
-    # Dynamic range (difference between 95th and 5th percentile in dB)
     loud = np.percentile(frame_rms, 95)
     quiet = np.percentile(frame_rms, 5)
     dynamic_range_db = 20 * np.log10((loud + 1e-10) / (quiet + 1e-10))
 
-    # Estimate compression ratio based on crest factor
-    # Lower crest factor suggests more compression
     if crest_factor_db < 6:
         compression_ratio = 8.0
     elif crest_factor_db < 10:
@@ -240,324 +142,93 @@ def analyze_dynamics(
     )
 ```
 
-### 3. Integrate with analyze_audio
+The `sr` argument is unused in this crest-factor sketch. Pass the real sample rate through when the measurement depends on it.
 
-```python
-# soundlab/analysis/__init__.py
-from soundlab.analysis.dynamics import analyze_dynamics
-from soundlab.analysis.models import DynamicRangeResult
-
-# In analyze_audio function, add:
-# dynamics = analyze_dynamics(y, sr)
-# result.dynamics = dynamics
-
-__all__ = [
-    # ... existing exports ...
-    "DynamicRangeResult",
-    "analyze_dynamics",
-]
-```
-
-### 4. Add Tests
-
-```python
-# tests/unit/test_analysis_dynamics.py
-import numpy as np
-import pytest
-
-from soundlab.analysis.dynamics import analyze_dynamics
-
-
-class TestDynamicRangeAnalysis:
-    def test_sine_wave_crest_factor(self):
-        """Pure sine wave has ~3dB crest factor."""
-        sr = 44100
-        t = np.linspace(0, 1, sr, dtype=np.float32)
-        sine = np.sin(2 * np.pi * 440 * t)
-
-        result = analyze_dynamics(sine, sr)
-
-        # Sine wave crest factor is sqrt(2) ≈ 3.01 dB
-        assert 2.5 < result.crest_factor_db < 3.5
-
-    def test_compressed_signal(self):
-        """Heavily limited signal has low crest factor."""
-        sr = 44100
-        t = np.linspace(0, 1, sr, dtype=np.float32)
-        # Square-ish wave (heavily compressed)
-        square = np.sign(np.sin(2 * np.pi * 440 * t)).astype(np.float32)
-
-        result = analyze_dynamics(square, sr)
-
-        # Square wave has ~0dB crest factor
-        assert result.crest_factor_db < 1.0
-        assert result.compression_ratio >= 4.0
-
-    def test_stereo_input(self):
-        """Stereo input is converted to mono."""
-        sr = 44100
-        mono = np.random.randn(sr).astype(np.float32)
-        stereo = np.stack([mono, mono])
-
-        result_mono = analyze_dynamics(mono, sr)
-        result_stereo = analyze_dynamics(stereo, sr)
-
-        assert abs(result_mono.crest_factor_db - result_stereo.crest_factor_db) < 0.1
-```
+Export `DynamicRangeResult` and `analyze_dynamics` from `soundlab.analysis` if they are public. Test synthetic signals, including mono and stereo shapes. `AudioSegment.samples` is channels-first when the file has more than one channel.
 
 ---
 
-## Adding Voice Models
+## Add a voice wrapper
 
-### 1. Define Configuration
+Voice code is optional and lives under `soundlab.voice`. The built-in text-to-speech path is `TTSGenerator.generate(TTSConfig)`. A new wrapper should take an explicit device mode because `get_device` requires one.
 
 ```python
-# soundlab/voice/models.py
-from pathlib import Path
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class CustomVoiceConfig(BaseModel):
-    """Configuration for custom voice model."""
+    model_config = ConfigDict(frozen=True)
 
-    model_path: Path = Field(description="Path to model checkpoint")
-    speaker_embedding: Path | None = Field(default=None, description="Speaker embedding file")
-    sample_rate: int = Field(default=22050, description="Output sample rate")
-    device: str = Field(default="auto", description="Processing device")
-
-    class Config:
-        frozen = True
-
-
-class CustomVoiceResult(BaseModel):
-    """Result from custom voice synthesis."""
-
-    audio: list[float] = Field(description="Generated audio samples")
-    sample_rate: int = Field(description="Audio sample rate")
-    duration: float = Field(description="Audio duration in seconds")
-    model_name: str = Field(description="Model used for synthesis")
+    model_path: str
+    sample_rate: int = Field(default=22050)
+    device: str = Field(default="auto")
 ```
 
-### 2. Implement Voice Wrapper
-
 ```python
-# soundlab/voice/custom.py
-from __future__ import annotations
-
-from pathlib import Path
-from typing import TYPE_CHECKING
-
-import numpy as np
-
 from soundlab.utils.gpu import get_device
-from soundlab.utils.retry import gpu_retry
-from soundlab.voice.models import CustomVoiceConfig, CustomVoiceResult
-
-if TYPE_CHECKING:
-    from numpy.typing import NDArray
 
 
 class CustomVoiceWrapper:
-    """Wrapper for custom voice model."""
-
-    def __init__(self, config: CustomVoiceConfig | None = None) -> None:
-        self.config = config or CustomVoiceConfig()
+    def __init__(self, config: CustomVoiceConfig) -> None:
+        self.config = config
         self._model = None
-        self._device = None
+        self._device = get_device(config.device)
 
-    def _load_model(self) -> None:
-        """Lazy load the model."""
-        if self._model is not None:
-            return
-
-        self._device = get_device() if self.config.device == "auto" else self.config.device
-
-        # Load your custom model here
-        # self._model = YourModel.load(self.config.model_path)
-        # self._model.to(self._device)
-        raise NotImplementedError("Implement model loading for your voice model")
-
-    @gpu_retry(max_attempts=3)
-    def synthesize(
-        self,
-        text: str,
-        speaker_id: int = 0,
-    ) -> CustomVoiceResult:
-        """Synthesize speech from text.
-
-        Args:
-            text: Input text to synthesize
-            speaker_id: Speaker ID for multi-speaker models
-
-        Returns:
-            CustomVoiceResult with generated audio
-        """
-        self._load_model()
-
-        # Implement synthesis logic
-        # audio = self._model.synthesize(text, speaker_id)
-
-        # Placeholder
-        duration = len(text) * 0.1  # Rough estimate
-        n_samples = int(duration * self.config.sample_rate)
-        audio = np.zeros(n_samples, dtype=np.float32)
-
-        return CustomVoiceResult(
-            audio=audio.tolist(),
-            sample_rate=self.config.sample_rate,
-            duration=duration,
-            model_name=str(self.config.model_path),
-        )
+    def synthesize(self, text: str) -> None:
+        raise NotImplementedError(f"Load {self.config.model_path} on {self._device} for {text!r}")
 ```
 
-### 3. Export from Module
+`get_device("auto")` returns `"cuda"` when CUDA is available and `"cpu"` otherwise. `"force_gpu"` and `"force_cpu"` are valid modes. `SOUNDLAB_GPU_MODE` overrides the argument when it is set.
 
-```python
-# soundlab/voice/__init__.py
-from soundlab.voice.custom import CustomVoiceWrapper
-from soundlab.voice.models import CustomVoiceConfig, CustomVoiceResult
-
-__all__ = [
-    # ... existing exports ...
-    "CustomVoiceConfig",
-    "CustomVoiceResult",
-    "CustomVoiceWrapper",
-]
-```
+Keep model downloads and hosted inference opt-in. Reference secrets by name and do not print them.
 
 ---
 
-## Adding Pipeline Backends
+## Add a separation backend
 
-### 1. Implement Protocol
+Implement the `SeparatorBackend` protocol. Its method is `separate(mix_wav, output_dir)` and it returns a map of stem name to path.
 
 ```python
-# soundlab/pipeline/backends/custom_separator.py
-from __future__ import annotations
-
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 from soundlab.pipeline.interfaces import SeparatorBackend
 
-if TYPE_CHECKING:
-    from soundlab.separation.models import SeparationConfig, StemResult
+
+class CustomSeparator:
+    def separate(self, mix_wav: Path, output_dir: Path) -> dict[str, Path]:
+        output_dir.mkdir(parents=True, exist_ok=True)
+        # Write stem files under output_dir and return their paths.
+        raise NotImplementedError(f"Separate {mix_wav}")
 
 
-class CustomSeparator(SeparatorBackend):
-    """Custom stem separation backend."""
-
-    def __init__(self, model_path: Path) -> None:
-        self.model_path = model_path
-        self._model = None
-
-    def separate(
-        self,
-        audio_path: Path,
-        output_dir: Path,
-        config: SeparationConfig,
-    ) -> StemResult:
-        """Separate audio into stems.
-
-        Args:
-            audio_path: Input audio file
-            output_dir: Directory for output stems
-            config: Separation configuration
-
-        Returns:
-            StemResult with paths to separated stems
-        """
-        # Implement your separation logic
-        raise NotImplementedError("Implement separation for your model")
-
-    def supports_model(self, model_name: str) -> bool:
-        """Check if this backend supports the given model."""
-        return model_name.startswith("custom_")
+def _check_protocol(backend: SeparatorBackend) -> SeparatorBackend:
+    return backend
 ```
 
-### 2. Register Backend
-
-```python
-# soundlab/pipeline/candidates.py
-from soundlab.pipeline.backends.custom_separator import CustomSeparator
-
-# In build_candidate_plans or pipeline initialization:
-def get_separator_backend(model_name: str) -> SeparatorBackend:
-    """Get appropriate backend for model."""
-    if model_name.startswith("custom_"):
-        return CustomSeparator(model_path=Path(model_name))
-    else:
-        from soundlab.separation import StemSeparator
-        return StemSeparator()
-```
+`StemSeparator.separate(audio_path, output_dir)` is the Demucs implementation. It returns a `StemResult`, not the protocol's `dict[str, Path]`. Call that method when you want Demucs. Implement `SeparatorBackend.separate(mix_wav, output_dir)` when a caller needs the path map, and construct that object at the call site.
 
 ---
 
-## Testing Guidelines
+## Tests
 
-### Unit Tests
+- Check config bounds and frozen models.
+- Process a synthetic `float32` array and compare shape.
+- Mark long or GPU tests with `@pytest.mark.slow` or `@pytest.mark.gpu`.
+- Disabled operations should not add validation requirements.
 
-- Test configuration validation (bounds, types)
-- Test processing with synthetic signals
-- Mock external dependencies (models, GPU)
+From the repository root, after `uv sync --all-packages`:
 
-### Integration Tests
-
-- Test end-to-end workflows
-- Use `@pytest.mark.slow` for long-running tests
-- Use fixtures for shared test data
-
-### Example Test Structure
-
-```python
-# tests/unit/test_your_module.py
-import numpy as np
-import pytest
-
-
-class TestYourConfig:
-    """Tests for configuration model."""
-
-    def test_defaults(self):
-        """Test default values."""
-        pass
-
-    def test_validation(self):
-        """Test parameter validation."""
-        pass
-
-
-class TestYourProcessor:
-    """Tests for processor class."""
-
-    @pytest.fixture
-    def processor(self):
-        """Create processor instance."""
-        pass
-
-    def test_basic_processing(self, processor):
-        """Test basic processing."""
-        pass
-
-    @pytest.mark.slow
-    def test_full_pipeline(self, processor):
-        """Test full pipeline (slow)."""
-        pass
+```bash
+uv run ruff format --check .
+uv run ruff check .
+uv run ty check packages/soundlab/src
+uv run pytest tests/ -m "not slow and not gpu"
 ```
+
+There is no `uv.lock` in this repository.
 
 ---
 
 ## Contributing
 
-1. Fork the repository
-2. Create a feature branch
-3. Add your extension with tests
-4. Run validation:
-   ```bash
-   uv run ruff format .
-   uv run ruff check .
-   uv run pytest tests/ -v
-   ```
-5. Submit a pull request
-
-See [CONTRIBUTING.md](../../CONTRIBUTING.md) for full guidelines.
+See [CONTRIBUTING.md](../../CONTRIBUTING.md). Open a focused pull request with the tests that cover the new behavior.

@@ -89,9 +89,7 @@ class TestSeparationIntegration:
         assert result.config == config
         assert result.processing_time_seconds >= 0
 
-        # Verify stems dictionary has expected keys
-        assert isinstance(result.stems, dict)
-        assert len(result.stems) > 0
+        assert list(result.stems) == ["drums", "bass", "other", "vocals"]
 
     def test_separate_with_two_stems_mode(
         self,
@@ -131,8 +129,8 @@ class TestSeparationIntegration:
             separator = StemSeparator(config=config)
             result = separator.separate(audio_path, output_dir)
 
-        # In two-stems mode, should have vocals and no_vocals
-        assert "vocals" in result.stems or len(result.stems) == 2
+        assert list(result.stems) == ["vocals", "no_vocals"]
+        assert result.instrumental == result.stems["no_vocals"]
 
     def test_separator_model_lazy_loading(self, mock_demucs_model: MagicMock) -> None:
         """Test that model is lazily loaded only when needed."""

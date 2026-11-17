@@ -1,88 +1,86 @@
 <div align="center">
 
-# 🎛️ SoundLab
+# SoundLab
 
 [![CI](https://github.com/wyattowalsh/soundlab/actions/workflows/ci.yml/badge.svg)](https://github.com/wyattowalsh/soundlab/actions/workflows/ci.yml)
-[![PyPI](https://img.shields.io/pypi/v/soundlab?color=blue)](https://pypi.org/project/soundlab/)
-[![Python](https://img.shields.io/pypi/pyversions/soundlab)](https://pypi.org/project/soundlab/)
 [![Coverage](https://codecov.io/gh/wyattowalsh/soundlab/branch/main/graph/badge.svg)](https://codecov.io/gh/wyattowalsh/soundlab)
-[![License](https://img.shields.io/github/license/wyattowalsh/soundlab)](LICENSE)
+[![License](https://img.shields.io/github/license/wyattowalsh/soundlab)](../../LICENSE)
 [![Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/wyattowalsh/soundlab/blob/main/notebooks/soundlab_studio.ipynb)
 
-**Production-ready music processing for stem separation, transcription, effects, and voice generation.**
+**Beta music-processing library for stem separation, transcription, effects, and voice generation.**
 
-[Documentation](https://wyattowalsh.github.io/soundlab) · [Examples](notebooks/examples/) · [Colab Notebook](https://colab.research.google.com/github/wyattowalsh/soundlab/blob/main/notebooks/soundlab_studio.ipynb)
+[Repository policy](../../README.md) · [Quickstart](../../docs/guides/quickstart.md) · [Colab notebook](../../notebooks/soundlab_studio.ipynb)
 
 </div>
 
 ---
 
-## ✨ Features
+SoundLab is a beta package. `soundlab.__version__` is `0.1.0`. The package metadata version in `packages/soundlab/pyproject.toml` is `1.0.0`. PyPI publication is disabled. The PyPI project named `soundlab` is a different project.
+
+The repository policy page is [`README.md`](../../README.md).
+
+## Features
 
 | Feature | Description |
 |---------|-------------|
-| 🎚️ **Stem Separation** | Demucs HTDemucs/HTDemucs-FT models for vocals, drums, bass, other |
-| 🎹 **Audio-to-MIDI** | Basic Pitch transcription with configurable thresholds |
-| 🎨 **Effects Processing** | Pedalboard-based EQ, compression, reverb, and creative effects |
-| 📊 **Audio Analysis** | Tempo, key, loudness (LUFS), spectral features |
-| 🗣️ **Voice Generation** | XTTS-v2 TTS and RVC voice conversion (optional) |
-| 🔄 **Pipeline** | Checkpointed workflows with QA scoring and candidate selection |
+| Stem separation | Demucs models for vocals, drums, bass, other, and 6-stem sets |
+| Audio-to-MIDI | Basic Pitch and CREPE transcription, selected by runtime |
+| Effects | Pedalboard EQ, compression, reverb, and creative effects |
+| Analysis | Tempo, key, loudness, and spectral features |
+| Voice | Optional XTTS-v2 TTS and an RVC conversion interface |
+| Pipeline | Candidate plans, QA scoring, and run artifacts |
 
----
+Capability availability depends on the selected backend, Python version, model terms, and runtime resources.
 
-## 📦 Installation
+## Installation
 
-### From PyPI
-
-```bash
-pip install soundlab
-```
-
-### With Optional Extras
-
-```bash
-# Voice generation (TTS + RVC)
-pip install soundlab[voice]
-
-# Gradio interface for notebooks
-pip install soundlab[notebook]
-
-# Full installation
-pip install soundlab[voice,notebook]
-```
-
-### From Source
+The workspace root project is `soundlab-workspace`. It does not depend on this library, so `uv sync` without `--all-packages` does not install it.
 
 ```bash
 git clone https://github.com/wyattowalsh/soundlab.git
 cd soundlab
-pip install -e ".[voice,notebook]"
+uv sync --all-packages
 ```
 
-> [!NOTE]
-> Requires Python 3.12+. GPU recommended for stem separation.
+The repository README also installs the notebook extra:
 
----
+```bash
+uv sync --all-packages --extra notebook
+```
 
-## 🚀 Quick Start
+There is no `uv.lock` in this repository.
 
-### Stem Separation
+Extras are declared on `packages/soundlab` (`notebook`, `voice`, `transcription`, `visualization`, and `all`). A local editable install of the notebook extra, which does not select the `all` extra, is:
+
+```bash
+uv pip install -e "packages/soundlab[notebook]"
+```
+
+A git install needs the package subdirectory:
+
+```bash
+uv pip install "soundlab[notebook] @ git+https://github.com/wyattowalsh/soundlab.git#subdirectory=packages/soundlab"
+```
+
+The library requires Python 3.10+. The workspace root requires Python 3.12+. A GPU is recommended for stem separation.
+
+## Quick start
+
+### Stem separation
 
 ```python
 from soundlab.separation import StemSeparator, SeparationConfig, DemucsModel
 
-# Configure and run separation
 config = SeparationConfig(model=DemucsModel.HTDEMUCS_FT, device="auto")
 separator = StemSeparator(config=config)
 result = separator.separate("song.mp3", output_dir="stems/")
 
-# Access stems
 print(f"Vocals: {result.vocals}")
 print(f"Drums: {result.stems['drums']}")
 print(f"Processing time: {result.processing_time_seconds:.1f}s")
 ```
 
-### Audio-to-MIDI Transcription
+### Audio-to-MIDI
 
 ```python
 from soundlab.transcription import MIDITranscriber, TranscriptionConfig
@@ -92,112 +90,101 @@ transcriber = MIDITranscriber(config=config)
 result = transcriber.transcribe("piano.wav", output_dir="midi/")
 
 for note in result.notes[:5]:
-    print(f"Pitch: {note.pitch}, Start: {note.start:.2f}s")
+    print(f"Pitch: {note.pitch}, Start: {note.start:.2f}s, End: {note.end:.2f}s")
 ```
 
-### Audio Analysis
+### Analysis
 
 ```python
 from soundlab import analyze_audio
 
 result = analyze_audio("song.mp3")
 print(f"Tempo: {result.tempo.bpm:.1f} BPM")
-print(f"Key: {result.key.key_name} ({result.key.camelot})")
-print(f"Loudness: {result.loudness.integrated_lufs:.1f} LUFS")
+print(f"Key: {result.key.name} ({result.key.camelot})")
+print(f"Loudness: {result.loudness.lufs:.1f} LUFS")
 ```
 
-### Effects Processing
+### Effects
 
 ```python
 from soundlab import load_audio, save_audio
 from soundlab.effects import EffectsChain, CompressorConfig, ReverbConfig, LimiterConfig
 
 audio = load_audio("vocals.wav")
-chain = EffectsChain([
-    CompressorConfig(threshold_db=-20, ratio=4.0),
-    ReverbConfig(room_size=0.3, wet_level=0.2),
-    LimiterConfig(threshold_db=-1.0),
-])
-processed = chain.process(audio.samples, audio.sample_rate)
-save_audio(processed, audio.sample_rate, "vocals_processed.wav")
+chain = (
+    EffectsChain()
+    .add(CompressorConfig(threshold_db=-20, ratio=4.0))
+    .add(ReverbConfig(room_size=0.3, wet=0.2))
+    .add(LimiterConfig(threshold_db=-1.0))
+)
+processed = chain.process_array(audio.samples, audio.sample_rate)
+audio.samples = processed
+save_audio(audio, "vocals_processed.wav")
 ```
 
----
+`EffectsChain.process("vocals.wav", "vocals_processed.wav")` reads and writes paths. Each effect supplies its Pedalboard plugin through `to_plugin()`.
 
-## 📓 Colab Notebook
+### Text-to-speech
 
-Run SoundLab in Google Colab with an interactive UI:
+The voice extra is optional. Install it from this package, for example `uv pip install -e "packages/soundlab[voice]"`.
 
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/wyattowalsh/soundlab/blob/main/notebooks/soundlab_studio.ipynb)
+```python
+from pathlib import Path
 
-**Features:**
-- GPU-accelerated processing
-- Gradio interface for file upload/download
-- Checkpoint resume for long sessions
-- QA dashboard with audio previews
+from soundlab.voice import TTSGenerator
+from soundlab.voice.models import TTSConfig
 
----
+result = TTSGenerator().generate(
+    TTSConfig(
+        text="Hello, welcome to SoundLab!",
+        language="en",
+        speaker_wav=Path("reference_voice.wav"),
+    )
+)
+print(result.audio_path)
+```
 
-## 📚 Documentation
+## Documentation
 
 | Guide | Description |
 |-------|-------------|
-| [Quickstart](docs/guides/quickstart.md) | Installation and basic usage |
-| [Colab Usage](docs/guides/colab-usage.md) | Step-by-step notebook guide |
-| [Extending](docs/guides/extending.md) | Add custom effects and analyzers |
+| [Quickstart](../../docs/guides/quickstart.md) | Installation and library usage |
+| [Colab usage](../../docs/guides/colab-usage.md) | Studio notebook walkthrough |
+| [Extending](../../docs/guides/extending.md) | Effects, analyzers, and separation backends |
+| [Contributing](../../CONTRIBUTING.md) | Local setup and validation |
+| [Changelog](../../CHANGELOG.md) | Release notes and current status |
 
----
+Examples live under [`notebooks/examples/`](../../notebooks/examples/).
 
-## 🏗️ Project Structure
+## Project structure
 
-```
+```text
 soundlab/
 ├── packages/soundlab/src/soundlab/
-│   ├── analysis/      # Tempo, key, loudness, spectral
-│   ├── effects/       # EQ, dynamics, time-based, creative
-│   ├── separation/    # Demucs stem separation
-│   ├── transcription/ # Basic Pitch audio-to-MIDI
-│   ├── voice/         # TTS (XTTS-v2) and SVC (RVC)
-│   ├── pipeline/      # Orchestration and QA
-│   └── utils/         # GPU, logging, retry, progress
-├── notebooks/         # Colab notebook and examples
-├── tests/             # Unit and integration tests
-└── docs/              # Documentation
+│   ├── analysis/
+│   ├── effects/
+│   ├── separation/
+│   ├── transcription/
+│   ├── voice/
+│   ├── pipeline/
+│   └── utils/
+├── notebooks/
+├── tests/
+└── docs/
 ```
 
----
-
-## 🧪 Development
+## Development
 
 ```bash
-# Clone and install
-git clone https://github.com/wyattowalsh/soundlab.git
-cd soundlab
-uv sync --dev
-
-# Run tests
-uv run pytest tests/ -v
-
-# Format and lint
-uv run ruff format .
+uv sync --all-packages --extra notebook
+uv run ruff format --check .
 uv run ruff check .
-
-# Type check
 uv run ty check packages/soundlab/src
+uv run pytest tests/ -m "not slow and not gpu"
 ```
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for full guidelines.
+See [CONTRIBUTING.md](../../CONTRIBUTING.md).
 
----
+## License
 
-## 📄 License
-
-[MIT License](LICENSE) © Wyatt Walsh
-
----
-
-<div align="center">
-
-**[⬆ Back to Top](#-soundlab)**
-
-</div>
+[MIT License](../../LICENSE). Third-party model weights and services keep their own terms.

@@ -17,7 +17,9 @@ from soundlab.transcription.models import MIDIResult, NoteEvent, TranscriptionCo
 if TYPE_CHECKING:
     from numpy.typing import NDArray
 
-# General MIDI drum map (channel 10)
+# General MIDI percussion is channel 10 in 1-based numbering. mido is 0-based,
+# so drum hits are written on channel 9. Melodic notes stay on channel 0.
+MIDI_DRUM_CHANNEL = 9
 DRUM_KICK = 36
 DRUM_SNARE = 38
 DRUM_HIHAT_CLOSED = 42
@@ -184,7 +186,12 @@ class DrumTranscriber:
         y = _to_mono(y)
 
         # Detect onsets using existing analysis module
-        onset_result = detect_onsets(y, sr, hop_length=self.config.hop_length)
+        onset_result = detect_onsets(
+            y,
+            sr,
+            hop_length=self.config.hop_length,
+            onset_threshold=self.config.onset_thresh,
+        )
         onset_times = onset_result.timestamps
 
         if not onset_times:
@@ -233,6 +240,7 @@ class DrumTranscriber:
                     start_seconds=onset_time,
                     end_seconds=end_time,
                     velocity=velocity,
+                    channel=MIDI_DRUM_CHANNEL,
                 )
             )
 

@@ -57,6 +57,26 @@ class TestDemucsModel:
         expected_stems = ["vocals", "drums", "bass", "other", "piano", "guitar"]
         assert DemucsModel.HTDEMUCS_6S.stems == expected_stems
 
+    def test_float32_request_wins_over_int24_default(self) -> None:
+        """A float32 request must not be stored as PCM_24."""
+        from soundlab.separation.models import stem_audio_subtype
+
+        assert stem_audio_subtype(float32=True, int24=True) == "FLOAT"
+        assert stem_audio_subtype(float32=False, int24=True) == "PCM_24"
+
+    def test_output_names_follow_model_sources(self) -> None:
+        """Tensor order comes from model.sources, not a vocals-first list."""
+        from soundlab.separation.models import output_stem_names
+
+        sources = ["drums", "bass", "other", "vocals"]
+        names, index = output_stem_names(sources, 4, None)
+        assert names == sources
+        assert index is None
+
+        names, index = output_stem_names(sources, 4, "vocals")
+        assert names == ["vocals", "no_vocals"]
+        assert index == 3
+
     def test_model_is_str_enum(self) -> None:
         """DemucsModel should be a StrEnum for JSON serialization."""
         assert isinstance(DemucsModel.HTDEMUCS, str)
@@ -420,6 +440,25 @@ class TestInstrumentalProperty:
 
         assert result.instrumental is None
 
+    def test_vocals_only_property_exposes_complement_without_writing(
+        self, tmp_path: Path
+    ) -> None:
+        """Reading instrumental after vocals-only returns no_vocals and does not write."""
+        complement = tmp_path / "no_vocals.wav"
+        complement.touch()
+        result = StemResult(
+            stems={
+                "vocals": tmp_path / "vocals.wav",
+                "no_vocals": complement,
+            },
+            source_path=tmp_path / "song.mp3",
+            config=SeparationConfig(),
+            processing_time_seconds=1.0,
+        )
+
+        assert result.instrumental == complement
+        assert result.export_instrumental() == complement
+
     @patch("soundlab.separation.models.sf.write")
     @patch("soundlab.separation.models.sf.read")
     def test_instrumental_property_computes_on_demand(
@@ -439,8 +478,7 @@ class TestInstrumentalProperty:
             stem_path.parent.mkdir(parents=True, exist_ok=True)
             stem_path.touch()
 
-        # Access the property
-        instrumental_path = stem_result_full.instrumental
+        instrumental_path = stem_result_full.export_instrumental()
 
         # Verify reads occurred for non-vocal stems
         expected_read_calls = [
@@ -478,11 +516,8 @@ class TestInstrumentalProperty:
             stem_path.parent.mkdir(parents=True, exist_ok=True)
             stem_path.touch()
 
-        # First access
-        first_result = stem_result_full.instrumental
-
-        # Second access
-        second_result = stem_result_full.instrumental
+        first_result = stem_result_full.export_instrumental()
+        second_result = stem_result_full.export_instrumental()
 
         # Results should be identical
         assert first_result == second_result
@@ -499,7 +534,7 @@ class TestInstrumentalProperty:
         """instrumental should return None when stem paths exist but files don't."""
         # Stem paths are in stems dict but files don't exist on disk
         # The property should handle this gracefully
-        result = stem_result_full.instrumental
+        result = stem_result_full.export_instrumental()
 
         assert result is None
 
@@ -521,8 +556,7 @@ class TestInstrumentalProperty:
         drums_path.parent.mkdir(parents=True, exist_ok=True)
         drums_path.touch()
 
-        # Access the property
-        instrumental_path = stem_result_partial.instrumental
+        instrumental_path = stem_result_partial.export_instrumental()
 
         # Verify only drums was read (only non-vocal stem available)
         mock_read.assert_called_once_with(drums_path)
@@ -553,8 +587,7 @@ class TestInstrumentalProperty:
         drums_path.touch()
         bass_path.touch()
 
-        # Access the property
-        instrumental_path = stem_result_full.instrumental
+        instrumental_path = stem_result_full.export_instrumental()
 
         # Verify reads for existing files only
         assert mock_read.call_count == 2

@@ -686,7 +686,31 @@ class TestSaveMidiEdgeCases:
             save_midi(data, output_path)
 
         # Verify note_on was created for time 0
-        mock_mido.Message.assert_any_call("note_on", note=60, velocity=100)
+        mock_mido.Message.assert_any_call("note_on", channel=0, note=60, velocity=100)
+
+    def test_drum_channel_is_written(self, tmp_path: Path) -> None:
+        """Drum notes keep MIDI channel 9 instead of mido's channel 0 default."""
+        mock_mido = MagicMock()
+        mock_midi_file = MagicMock()
+        mock_track: list[MagicMock] = []
+        mock_mido.MidiFile.return_value = mock_midi_file
+        mock_mido.MidiTrack.return_value = mock_track
+        mock_mido.bpm2tempo.return_value = 500000
+        mock_mido.second2tick.return_value = 0
+        mock_mido.MetaMessage.return_value = MagicMock(time=0)
+        mock_mido.Message.side_effect = lambda *args, **kwargs: MagicMock(time=0)
+
+        with patch("soundlab.io.midi_io.importlib.import_module", return_value=mock_mido):
+            note = MIDINote(
+                pitch=36,
+                start_seconds=0.0,
+                end_seconds=0.1,
+                velocity=100,
+                channel=9,
+            )
+            save_midi(MIDIData(notes=[note], tempo=120.0), tmp_path / "drums.mid")
+
+        mock_mido.Message.assert_any_call("note_on", channel=9, note=36, velocity=100)
         mock_midi_file.save.assert_called_once()
 
     def test_simultaneous_notes_ordered(self, tmp_path: Path) -> None:

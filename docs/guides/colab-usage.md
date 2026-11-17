@@ -1,346 +1,265 @@
 # Colab Usage Guide
 
-Step-by-step guide to using SoundLab in Google Colab.
+Walkthrough of [`notebooks/soundlab_studio.ipynb`](../../notebooks/soundlab_studio.ipynb). Control names below are the form variables in that notebook.
+
+The repository policy page is the root [README.md](../../README.md). Mounting Drive, publishing a Gradio link, hosted uploads, and paid processing stay explicit opt-ins.
 
 ---
 
 ## Getting Started
 
-### 1. Open the Notebook
+### 1. Open the notebook
 
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/wyattowalsh/soundlab/blob/main/notebooks/soundlab_studio.ipynb)
 
-Or upload `notebooks/soundlab_studio.ipynb` manually to Google Colab.
+Or upload `notebooks/soundlab_studio.ipynb` to Colab.
 
-### 2. Enable GPU Runtime
-
-For best performance, enable GPU acceleration:
+### 2. Choose a runtime
 
 1. Click **Runtime** → **Change runtime type**
-2. Select **T4 GPU** (or better)
+2. Select a GPU runtime when you want GPU separation
 3. Click **Save**
 
-<!-- Screenshot placeholder: runtime_settings.png -->
-
-> [!NOTE]
-> SoundLab works on CPU, but GPU acceleration provides 5-10x faster processing for stem separation.
+The notebook also runs on CPU. It reports the device it actually sees. A GPU runtime type does not by itself prove the selected model fits in memory.
 
 ---
 
-## Notebook Walkthrough
+## Notebook walkthrough
 
-### Cell 0: Resume From Checkpoint
-
-Configure caching and resume previous runs:
+### Resume
 
 ```python
-resume_run_id = ""  # Leave empty for new run, or enter previous run ID
+resume_run_id = ""  # empty starts a new run
 cache_root = "/content/drive/MyDrive/soundlab_cache"
-enable_drive_cache = True  # Persist models and checkpoints to Drive
+enable_drive_cache = True
 ```
 
-<!-- Screenshot placeholder: cell0_checkpoint.png -->
-
-**Key Options:**
-
-| Option | Description |
-|--------|-------------|
-| `resume_run_id` | Enter a previous run ID to resume processing |
+| Control | Role |
+|---------|------|
+| `resume_run_id` | Previous run id to reload. Empty starts fresh |
 | `cache_root` | Directory for models and checkpoints |
-| `enable_drive_cache` | Mount Google Drive for persistent storage |
+| `enable_drive_cache` | Mount Google Drive when you want that cache to persist |
 
-> [!TIP]
-> Enable Drive caching to avoid re-downloading models (~2GB) on each session.
+Leave `enable_drive_cache` off for a local session. Turn it on only when you want Drive storage.
 
-### Cell 1: Header & Overview
-
-Read the notebook overview and feature list. No configuration needed.
-
-### Cell 2: Environment Setup
-
-Configure runtime settings:
+### Environment
 
 ```python
 gpu_mode = "auto"      # "auto", "force_gpu", "force_cpu"
 log_level = "INFO"     # "DEBUG", "INFO", "WARNING", "ERROR"
 output_base = "/content/soundlab_outputs"
-deterministic = False  # Enable for reproducible results
+deterministic = False
 random_seed = 42
 ```
 
-<!-- Screenshot placeholder: cell2_environment.png -->
+The cell prints GPU availability, GPU name, memory, the selected `gpu_mode`, and the output directory.
 
-**Runtime Information Displayed:**
-
-- GPU availability and model
-- VRAM capacity
-- Output directory paths
-
-### Cell 3: Package Installation
-
-Install SoundLab with optional extras:
+### Install
 
 ```python
-install_voice = False  # Enable TTS and voice conversion
-install_from = "pypi"  # "pypi", "github_main", "github_dev"
+install_voice = False
+install_from = "github_main"  # "github_main" or "github_dev"
 force_reinstall = False
 ```
 
-<!-- Screenshot placeholder: cell3_install.png -->
+The install cell builds `soundlab[notebook] @ git+https://github.com/wyattowalsh/soundlab.git#subdirectory=packages/soundlab`. `github_dev` pins that URL to the `dev` branch. `install_voice` adds the `voice` extra on the same package. The PyPI project named `soundlab` is a different project, and publication of this package is disabled.
 
-> [!IMPORTANT]
-> First-time installation takes 2-3 minutes. Models download on first use.
+### Upload
 
----
+The upload cell accepts WAV, MP3, FLAC, OGG, AIFF, and M4A. It shows duration, sample rate, channel count, and a file hash.
 
-## Processing Workflow
-
-### Cell 4: Upload Audio
-
-Upload your audio file using the Gradio interface:
-
-<!-- Screenshot placeholder: cell4_upload.png -->
-
-**Supported Formats:** WAV, MP3, FLAC, OGG, AIFF, M4A
-
-**Metadata Displayed:**
-
-- Duration
-- Sample rate
-- Channels (mono/stereo)
-- File hash (for caching)
-
-### Cell 5: Canonical Decode
-
-Normalize audio to consistent format:
+### Canonical decode
 
 ```python
-target_sr = 44100      # Target sample rate
-target_channels = 2    # 1 for mono, 2 for stereo
-normalize_peak_db = -1.0  # Peak normalization level
+target_sample_rate = 44100
+target_channels = 2          # 1 or 2
+normalize_audio = True
+normalization_level = -1.0   # peak level in dB, used when normalize_audio is true
 ```
 
-<!-- Screenshot placeholder: cell5_decode.png -->
+`normalization_level` is the peak target in dB. Normalization runs only when `normalize_audio` is true.
 
-### Cell 6: Excerpt Selection
-
-Select a portion of audio for quick testing:
+### Excerpt
 
 ```python
 use_excerpt = True
-excerpt_mode = "auto"  # "auto" or "manual"
-excerpt_start = 0.0    # Start time (seconds)
-excerpt_duration = 30.0  # Duration (seconds)
+excerpt_start_seconds = 30.0
+excerpt_duration_seconds = 30.0
+auto_select_excerpt = False
 ```
 
-<!-- Screenshot placeholder: cell6_excerpt.png -->
-
-> [!TIP]
-> Use **auto** mode to automatically select the most energetic 30-second segment.
+Set `use_excerpt` false to keep the full track. Set `auto_select_excerpt` true to start the excerpt at the most energetic region of `excerpt_duration_seconds`. This cell prints the run id used later by `resume_run_id`.
 
 ---
 
-## Stem Separation
-
-### Cell 7: Separation Configuration
-
-Configure the Demucs model:
+## Stem separation
 
 ```python
-model = "htdemucs_ft"  # Best quality
-two_stems = None       # None for 4 stems, "vocals" for vocals/accompaniment
-segment = 7.8          # Segment length (seconds)
-overlap = 0.25         # Segment overlap ratio
-shifts = 1             # Random shifts for better quality
-output_format = "wav"  # "wav", "mp3", "flac"
+separation_model = "htdemucs_ft"  # htdemucs, htdemucs_ft, htdemucs_6s, mdx_extra, mdx_extra_q
+two_stems = "none"                # none, vocals, drums, bass, other
+segment_length = 7.8
+overlap = 0.25
+shifts = 1
+output_format = "wav"             # wav, mp3, flac
+mp3_bitrate = 320
+float32_output = True
 ```
 
-<!-- Screenshot placeholder: cell7_separation.png -->
+| `separation_model` | Stems |
+|--------------------|-------|
+| `htdemucs` | 4 |
+| `htdemucs_ft` | 4 |
+| `htdemucs_6s` | 6 |
+| `mdx_extra` | 4 |
+| `mdx_extra_q` | 4 |
 
-**Model Comparison:**
+`two_stems = "none"` separates the full stem set. Any other value keeps that stem and a complement.
 
-| Model | Quality | Speed | VRAM |
-|-------|---------|-------|------|
-| `htdemucs` | Good | ~45s | 4GB |
-| `htdemucs_ft` | Best | ~3min | 6GB |
-| `htdemucs_6s` | Good (6 stems) | ~1min | 5GB |
-
-### Cell 8: Candidate Selection (Max-Quality Mode)
-
-Run multiple separation strategies and select best results:
+### Candidate selection
 
 ```python
-enable_candidates = True
-candidate_models = ["htdemucs", "htdemucs_ft"]
-excerpt_qa = True  # Test on excerpt first
-full_rerun = True  # Re-run best candidate on full track
+enable_candidate_selection = True
+excerpt_start = 30.0
+excerpt_duration = 30.0
+max_candidates = 3
+min_overall_score = 0.7
+max_reconstruction_error = 0.15
+max_clipping_ratio = 0.01
+rerun_full_on_best = True
 ```
 
-<!-- Screenshot placeholder: cell8_candidates.png -->
+`rerun_full_on_best` repeats the chosen candidate on the full track. Leave `enable_candidate_selection` false to keep the single separation from the previous cell.
 
 ---
 
-## Transcription & Post-Processing
+## Transcription and post-processing
 
-### Cell 9: Stem Post-Processing
-
-Clean and prepare stems for transcription:
+### Stem post-processing
 
 ```python
-min_silence_db = -60   # Silence threshold
-alignment_safe = True  # Preserve timing alignment
-create_mono_exports = True  # Create mono versions for transcription
+silence_threshold = 1e-4
+enable_silence_filtering = True
+clipping_threshold = 0.99
+max_clipping_ratio = 0.01
+prepare_mono_for_amt = True
+save_mono_stems = True
 ```
 
-<!-- Screenshot placeholder: cell9_postprocess.png -->
-
-### Cell 10: Transcription
-
-Convert stems to MIDI:
+### Transcription
 
 ```python
-transcribe_vocals = True
+transcribe_vocals = False
+transcribe_drums = False
 transcribe_bass = True
 transcribe_other = True
+transcribe_piano = True
+transcribe_guitar = True
 onset_threshold = 0.5
 frame_threshold = 0.3
 min_note_length = 0.058
 ```
 
-<!-- Screenshot placeholder: cell10_transcription.png -->
+The same cell also has `bass_min_freq`, `bass_max_freq`, `default_min_freq`, `default_max_freq`, `enable_fallback`, and `fallback_lower_threshold`.
 
-### Cell 11: MIDI Cleanup
-
-Refine MIDI output:
+### MIDI cleanup
 
 ```python
-quantize = True
-quantize_grid = 16     # 16th notes
-quantize_strength = 0.5
+min_note_duration = 0.02
+min_velocity = 1
 filter_short_notes = True
-min_note_duration = 0.05
+detect_tempo_from_audio = True
+fallback_bpm = 120.0
+enable_quantization = True
+quantize_strength = 0.5
+quantize_grid = "1/16"  # "1/4", "1/8", "1/16", "1/32"
+enable_program_mapping = True
 ```
-
-<!-- Screenshot placeholder: cell11_midi_cleanup.png -->
 
 ---
 
-## Review & Export
+## Review and export
 
-### Cell 12: QA Dashboard
+The QA cell previews stems, residual and reconstruction audio, metrics, and rerun controls. It has no extra form variables.
 
-Interactive preview and quality assessment:
+### Voice
 
-<!-- Screenshot placeholder: cell12_qa_dashboard.png -->
-
-**Features:**
-
-- Audio players for each stem
-- Residual audio (artifacts check)
-- Reconstruction comparison
-- QA metrics table
-- Rerun controls
-
-### Cell 13: Voice Generation (Optional)
-
-Generate speech or convert voices:
+Voice cells require `install_voice` in the install cell.
 
 ```python
 enable_tts = False
-tts_text = "Hello, world!"
+tts_text = "Hello, this is a voice generation test."
 tts_language = "en"
+tts_speaker_wav = ""
 
 enable_svc = False
-svc_model_path = ""  # Path to RVC model
+svc_source_stem = "vocals"  # vocals or other
+svc_pitch_shift = 0
+svc_model_path = ""
+svc_index_path = ""
 ```
 
-<!-- Screenshot placeholder: cell13_voice.png -->
-
-### Cell 14: Export & Download
-
-Package results for download:
+### Export
 
 ```python
+export_stems = True
+export_midi = True
+export_voice = True
+export_analysis = True
+export_config = True
+export_qa_report = True
+stem_format = "wav"  # wav, mp3, flac
 normalize_stems = True
-normalize_target_lufs = -14.0
-export_format = "wav"
-create_zip = True
-include_config = True
-include_qa_report = True
+normalization_lufs = -14.0
+create_zip_archive = True
+zip_filename = "soundlab_export"
+auto_download = True
 ```
 
-<!-- Screenshot placeholder: cell14_export.png -->
+When those sections have outputs, the archive name starts with `zip_filename` and can include `stems/`, `midi/`, voice files, analysis files, `config.json`, and `qa_report.csv`.
 
-**Export Contents:**
-
-```
-soundlab_export_<run_id>.zip
-├── stems/
-│   ├── vocals.wav
-│   ├── drums.wav
-│   ├── bass.wav
-│   └── other.wav
-├── midi/
-│   ├── vocals.mid
-│   ├── bass.mid
-│   └── other.mid
-├── config.json
-├── qa_report.csv
-└── manifest.json
-```
-
-### Cell 15: Cleanup
-
-Free resources and clean temporary files:
+### Cleanup
 
 ```python
 cleanup_stems = False
 cleanup_midi = False
-cleanup_all = False
+cleanup_voice = False
+cleanup_analysis = False
+cleanup_exports = False
+cleanup_cache = False
 clear_gpu_cache = True
+reset_global_state = False
 ```
 
-<!-- Screenshot placeholder: cell15_cleanup.png -->
+Each `cleanup_*` flag removes that output family. `clear_gpu_cache` frees CUDA memory. `reset_global_state` clears the notebook's in-memory run state.
 
 ---
 
-## Tips & Troubleshooting
+## Troubleshooting
 
-### Memory Issues
+GPU memory:
 
-If you encounter GPU out-of-memory errors:
+1. Choose a smaller `separation_model`, such as `htdemucs`.
+2. Lower `segment_length`. The notebook slider starts at 5.0.
+3. Shorten `excerpt_duration_seconds` before a full-track run.
+4. Run the cleanup cell with `clear_gpu_cache` enabled.
 
-1. Use a smaller model (`htdemucs` instead of `htdemucs_ft`)
-2. Reduce segment length (e.g., `segment=5.0`)
-3. Process shorter excerpts first
-4. Run cleanup cell to free GPU memory
+Session timeout:
 
-### Session Timeout
+1. Set `enable_drive_cache` if you want the cache on Drive.
+2. Copy the run id printed by the excerpt cell.
+3. Pass it as `resume_run_id` on the next session.
 
-Colab sessions timeout after ~12 hours of inactivity:
+A local timeout does not prove that a remote job was cancelled.
 
-1. Enable Google Drive caching (Cell 0)
-2. Note your run ID from Cell 6
-3. Resume using `resume_run_id` in Cell 0
+Separation quality:
 
-### Slow Installation
-
-First-time installation is slow due to dependencies:
-
-1. Use Drive caching to persist installed packages
-2. Consider using `github_main` for latest fixes
-
-### Audio Quality Issues
-
-If separation quality is poor:
-
-1. Try `htdemucs_ft` model (best quality)
-2. Increase `shifts` to 2-5 (slower but better)
-3. Check input audio quality (44.1kHz+ recommended)
+1. Try `separation_model = "htdemucs_ft"`.
+2. Raise `shifts`. The slider allows 0 through 5.
+3. Check the source sample rate. The decode cell's `target_sample_rate` defaults to 44100.
 
 ---
 
-## Keyboard Shortcuts
+## Keyboard shortcuts
 
 | Shortcut | Action |
 |----------|--------|
@@ -352,8 +271,8 @@ If separation quality is poor:
 
 ---
 
-## Next Steps
+## Next steps
 
-- [Quickstart Guide](quickstart.md) — Python API usage
-- [Extending SoundLab](extending.md) — Custom effects and analyzers
-- [GitHub Repository](https://github.com/wyattowalsh/soundlab) — Source code and issues
+- [Quickstart](quickstart.md)
+- [Extending SoundLab](extending.md)
+- [Repository](https://github.com/wyattowalsh/soundlab)

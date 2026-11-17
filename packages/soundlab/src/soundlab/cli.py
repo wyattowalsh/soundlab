@@ -10,7 +10,7 @@ import typer
 from soundlab.analysis import analyze_audio
 from soundlab.effects import EffectsChain
 from soundlab.separation import DemucsModel, SeparationConfig, StemSeparator
-from soundlab.transcription import MIDITranscriber, TranscriptionConfig
+from soundlab.transcription import TranscriptionConfig, get_transcriber
 
 app = typer.Typer(help="SoundLab CLI", add_completion=False)
 
@@ -46,7 +46,7 @@ def transcribe(
     min_freq: Annotated[float, typer.Option(help="Minimum frequency (Hz).")] = 32.7,
     max_freq: Annotated[float, typer.Option(help="Maximum frequency (Hz).")] = 2093.0,
 ) -> None:
-    """Transcribe audio to MIDI using Basic Pitch."""
+    """Transcribe audio to MIDI with the backend available on this Python."""
     config = TranscriptionConfig(
         onset_thresh=onset_thresh,
         frame_thresh=frame_thresh,
@@ -54,7 +54,7 @@ def transcribe(
         min_freq=min_freq,
         max_freq=max_freq,
     )
-    transcriber = MIDITranscriber(config)
+    transcriber = get_transcriber(backend="auto", config=config)
     result = transcriber.transcribe(audio_path, output_dir)
     typer.echo(result.model_dump_json(indent=2))
 

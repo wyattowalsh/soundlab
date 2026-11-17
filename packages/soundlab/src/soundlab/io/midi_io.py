@@ -16,6 +16,7 @@ class MIDINote(BaseModel):
     start_seconds: float = Field(ge=0)
     end_seconds: float = Field(ge=0)
     velocity: int = Field(ge=0, le=127)
+    channel: int = Field(default=0, ge=0, le=15)
 
     @model_validator(mode="after")
     def _validate_times(self) -> MIDINote:
@@ -50,6 +51,20 @@ def _default_time_signature() -> TimeSignature:
     return TimeSignature(numerator=4, denominator=4)
 
 
+def _note_channel(message: Any) -> int:
+    """Read an explicit 0-based MIDI channel from a message.
+
+    Missing or non-integer channels stay on channel 0. Callers that need drums
+    set ``MIDINote.channel`` to 9; pitch is not used as a channel hint.
+    """
+    channel = getattr(message, "channel", 0)
+    if isinstance(channel, bool) or not isinstance(channel, int):
+        return 0
+    if channel < 0 or channel > 15:
+        return 0
+    return channel
+
+
 def load_midi(path: str | Path) -> MIDIData:
     """Load a MIDI file into a MIDIData structure."""
     mido = _load_mido()
@@ -59,7 +74,7 @@ def load_midi(path: str | Path) -> MIDIData:
     tempo_bpm = 120.0
     time_signature = _default_time_signature()
     notes: list[MIDINote] = []
-    active: dict[int, list[tuple[float, int]]] = {}
+    active: dict[tuple[int, int], list[tuple[float, int]]] = {}
     current_time = 0.0
 
     for message in mido.merge_tracks(midi.tracks):
@@ -79,11 +94,13 @@ def load_midi(path: str | Path) -> MIDIData:
             continue
 
         if message.type == "note_on" and message.velocity > 0:
-            active.setdefault(message.note, []).append((current_time, message.velocity))
+            channel = _note_channel(message)
+            active.setdefault((channel, message.note), []).append((current_time, message.velocity))
             continue
 
         if message.type == "note_off" or (message.type == "note_on" and message.velocity == 0):
-            starts = active.get(message.note)
+            channel = _note_channel(message)
+            starts = active.get((channel, message.note))
             if not starts:
                 continue
             start_time, velocity = starts.pop(0)
@@ -93,6 +110,7 @@ def load_midi(path: str | Path) -> MIDIData:
                     start_seconds=start_time,
                     end_seconds=current_time,
                     velocity=velocity,
+                    channel=channel,
                 )
             )
 
@@ -135,9 +153,24 @@ def save_midi(data: MIDIData, path: str | Path) -> None:
         start_tick = _seconds_to_ticks(note.start_seconds, ticks_per_beat, tempo, mido)
         end_tick = _seconds_to_ticks(note.end_seconds, ticks_per_beat, tempo, mido)
         events.append(
-            (start_tick, 1, mido.Message("note_on", note=note.pitch, velocity=note.velocity))
+            (
+                start_tick,
+                1,
+                mido.Message(
+                    "note_on",
+                    channel=note.channel,
+                    note=note.pitch,
+                    velocity=note.velocity,
+                ),
+            )
         )
-        events.append((end_tick, 0, mido.Message("note_off", note=note.pitch, velocity=0)))
+        events.append(
+            (
+                end_tick,
+                0,
+                mido.Message("note_off", channel=note.channel, note=note.pitch, velocity=0),
+            )
+        )
 
     events.sort(key=lambda item: (item[0], item[1]))
 
