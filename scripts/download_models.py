@@ -72,7 +72,10 @@ def download_xtts_model(cache_dir: Path | None = None) -> None:  # noqa: ARG001
         from TTS.api import TTS
     except ImportError:
         print("❌ TTS not installed. Install with: pip install TTS")
-        print("   Or install soundlab with voice extras: pip install soundlab[voice]")
+        print(
+            '   Or install this package with voice extras: '
+            'uv pip install -e "packages/soundlab[voice]"'
+        )
         sys.exit(1)
 
     print("🗣️ Downloading XTTS-v2 model...")

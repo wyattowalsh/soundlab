@@ -120,7 +120,7 @@ def benchmark_io(audio_path: Path) -> list[BenchmarkResult]:
     # Save
     with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
         with timer() as t:
-            save_audio(audio.samples, audio.sample_rate, Path(f.name))
+            save_audio(audio, Path(f.name))
         results.append(BenchmarkResult("io", "save_audio", t["duration"]))
         Path(f.name).unlink()
 
@@ -139,7 +139,7 @@ def benchmark_separation(audio_path: Path) -> list[BenchmarkResult]:
     # Test with fastest model
     config = SeparationConfig(
         model=DemucsModel.HTDEMUCS,
-        segment=7.8,  # Shorter segment for speed
+        segment_length=7.8,
         shifts=1,
     )
 
@@ -177,21 +177,32 @@ def benchmark_transcription(audio_path: Path) -> list[BenchmarkResult]:
     results = []
 
     try:
-        from soundlab.transcription import BasicPitchTranscriber, TranscriptionConfig
+        from soundlab.transcription import TranscriptionConfig, get_transcriber
     except ImportError:
         return [BenchmarkResult("transcription", "import", 0, notes="Import failed")]
 
     config = TranscriptionConfig()
-    transcriber = BasicPitchTranscriber(config)
+    try:
+        transcriber = get_transcriber(backend="auto", config=config)
+    except ImportError as exc:
+        return [BenchmarkResult("transcription", "get_transcriber", 0, notes=f"Failed: {exc}")]
 
-    with timer() as t:
-        try:
-            result = transcriber.transcribe(audio_path)
-            notes = f"{len(result.notes)} notes"
-        except Exception as e:
-            notes = f"Failed: {e}"
+    with tempfile.TemporaryDirectory() as tmpdir:
+        with timer() as t:
+            try:
+                result = transcriber.transcribe(audio_path, Path(tmpdir))
+                notes = f"{len(result.notes)} notes"
+            except Exception as e:
+                notes = f"Failed: {e}"
 
-    results.append(BenchmarkResult("transcription", "basic_pitch", t["duration"], notes=notes))
+    results.append(
+        BenchmarkResult(
+            "transcription",
+            transcriber.__class__.__name__,
+            t["duration"],
+            notes=notes,
+        )
+    )
 
     return results
 
@@ -202,7 +213,7 @@ def benchmark_analysis(audio_path: Path) -> list[BenchmarkResult]:
 
     try:
         from soundlab.analysis import (
-            analyze_loudness,
+            measure_loudness,
             analyze_spectral,
             detect_key,
             detect_onsets,
@@ -232,7 +243,7 @@ def benchmark_analysis(audio_path: Path) -> list[BenchmarkResult]:
     with timer() as t:
         try:
             key = detect_key(mono, sr)
-            notes = f"{key.key} {key.mode}"
+            notes = key.name
         except Exception as e:
             notes = f"Failed: {e}"
     results.append(BenchmarkResult("analysis", "detect_key", t["duration"], notes=notes))
@@ -240,17 +251,17 @@ def benchmark_analysis(audio_path: Path) -> list[BenchmarkResult]:
     # Loudness
     with timer() as t:
         try:
-            loudness = analyze_loudness(mono, sr)
-            notes = f"{loudness.integrated_lufs:.1f} LUFS"
+            loudness = measure_loudness(mono, sr)
+            notes = f"{loudness.lufs:.1f} LUFS"
         except Exception as e:
             notes = f"Failed: {e}"
-    results.append(BenchmarkResult("analysis", "analyze_loudness", t["duration"], notes=notes))
+    results.append(BenchmarkResult("analysis", "measure_loudness", t["duration"], notes=notes))
 
     # Spectral
     with timer() as t:
         try:
             spectral = analyze_spectral(mono, sr)
-            notes = f"centroid={spectral.centroid_mean:.0f}Hz"
+            notes = f"centroid={spectral.centroid:.0f}Hz"
         except Exception as e:
             notes = f"Failed: {e}"
     results.append(BenchmarkResult("analysis", "analyze_spectral", t["duration"], notes=notes))
@@ -259,7 +270,7 @@ def benchmark_analysis(audio_path: Path) -> list[BenchmarkResult]:
     with timer() as t:
         try:
             onsets = detect_onsets(mono, sr)
-            notes = f"{len(onsets.times)} onsets"
+            notes = f"{onsets.count} onsets"
         except Exception as e:
             notes = f"Failed: {e}"
     results.append(BenchmarkResult("analysis", "detect_onsets", t["duration"], notes=notes))
@@ -272,7 +283,13 @@ def benchmark_effects(audio_path: Path) -> list[BenchmarkResult]:
     results = []
 
     try:
-        from soundlab.effects import EffectsChain
+        from soundlab.effects import (
+            CompressorConfig,
+            EffectsChain,
+            HighpassConfig,
+            LimiterConfig,
+            ReverbConfig,
+        )
         from soundlab.io import load_audio
     except ImportError:
         return [BenchmarkResult("effects", "import", 0, notes="Import failed")]
@@ -283,17 +300,17 @@ def benchmark_effects(audio_path: Path) -> list[BenchmarkResult]:
     chain = EffectsChain()
 
     try:
-        chain.add_compressor(threshold_db=-20, ratio=4.0)
-        chain.add_eq(low_gain_db=2.0, mid_gain_db=-1.0, high_gain_db=1.0)
-        chain.add_reverb(room_size=0.5, damping=0.5, wet_level=0.3)
-        chain.add_limiter(threshold_db=-1.0)
+        chain.add(CompressorConfig(threshold_db=-20, ratio=4.0))
+        chain.add(HighpassConfig(cutoff_frequency_hz=80))
+        chain.add(ReverbConfig(room_size=0.5, damping=0.5, wet=0.3))
+        chain.add(LimiterConfig(threshold_db=-1.0))
     except Exception as e:
         return [BenchmarkResult("effects", "setup", 0, notes=f"Failed: {e}")]
 
     with timer() as t:
         try:
-            _ = chain.process(audio.samples, audio.sample_rate)
-            notes = f"{len(chain)} effects"
+            _ = chain.process_array(audio.samples, audio.sample_rate)
+            notes = f"{len(chain.effects)} effects"
         except Exception as e:
             notes = f"Failed: {e}"
 

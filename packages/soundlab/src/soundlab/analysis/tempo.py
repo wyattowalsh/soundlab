@@ -32,9 +32,11 @@ def detect_tempo(
     mono = _to_mono(y)
     tempo, beat_frames = librosa.beat.beat_track(y=mono, sr=sr, hop_length=hop_length)
 
+    tempo_values = np.atleast_1d(np.asarray(tempo, dtype=float))
+    bpm = float(tempo_values[0]) if tempo_values.size else 0.0
     beat_frames = np.asarray(beat_frames) if beat_frames is not None else np.array([], dtype=int)
     beat_times = librosa.frames_to_time(beat_frames, sr=sr, hop_length=hop_length)
     beats = [float(value) for value in np.asarray(beat_times).tolist()]
     confidence = 0.0 if beat_frames.size == 0 else 1.0
 
-    return TempoResult(bpm=float(tempo), confidence=confidence, beats=beats)
+    return TempoResult(bpm=bpm, confidence=confidence, beats=beats)
