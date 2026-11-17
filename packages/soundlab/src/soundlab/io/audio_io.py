@@ -153,12 +153,50 @@ def get_audio_metadata(path: str | Path) -> AudioMetadata:
         )
 
 
+def _export_explicit_pcm16(
+    segment: AudioSegment,
+    target: Path,
+    audio_format: AudioFormat,
+    soundfile_error: Exception,
+) -> None:
+    """Quantize to int16 and export through pydub.
+
+    This runs only after the caller requests ``BitDepth.INT16``. The soundfile
+    error stays attached when the integer export fails.
+    """
+    samples = segment.samples
+    if samples.ndim == 1:
+        samples = samples[np.newaxis, :]
+    channels, frames = samples.shape
+    clipped = np.clip(samples, -1.0, 1.0)
+    int_samples = (clipped * 32767).astype(np.int16)
+    interleaved = int_samples.T.reshape(frames * channels)
+
+    try:
+        pydub_segment = PydubAudioSegment(
+            data=interleaved.tobytes(),
+            sample_width=2,
+            frame_rate=segment.sample_rate,
+            channels=channels,
+        )
+        pydub_segment.export(target, format=audio_format.value)
+    except Exception as pydub_error:
+        raise pydub_error from soundfile_error
+
+
 def save_audio(
     segment: AudioSegment,
     path: str | Path,
     format: str | AudioFormat | None = None,
+    *,
+    integer_format: BitDepth | None = None,
 ) -> None:
-    """Save an AudioSegment to disk."""
+    """Save an AudioSegment to disk.
+
+    Soundfile writes the original samples. If that write fails, the soundfile
+    error propagates unless ``integer_format`` is ``BitDepth.INT16``. Only that
+    explicit integer format may clip to int16 and export through pydub.
+    """
     target = Path(path)
     audio_format = _infer_format(target, format)
     data = _channels_last(segment.samples)
@@ -173,22 +211,11 @@ def save_audio(
             segment.sample_rate,
             format=audio_format.value.upper(),
         )
-        return
-    except Exception:
-        pass
-
-    samples = segment.samples
-    if samples.ndim == 1:
-        samples = samples[np.newaxis, :]
-    channels, frames = samples.shape
-    clipped = np.clip(samples, -1.0, 1.0)
-    int_samples = (clipped * 32767).astype(np.int16)
-    interleaved = int_samples.T.reshape(frames * channels)
-
-    pydub_segment = PydubAudioSegment(
-        data=interleaved.tobytes(),
-        sample_width=2,
-        frame_rate=segment.sample_rate,
-        channels=channels,
-    )
-    pydub_segment.export(target, format=audio_format.value)
+    except Exception as soundfile_error:
+        if integer_format is None:
+            raise
+        if integer_format != BitDepth.INT16:
+            raise AudioFormatError(
+                "integer_format must be BitDepth.INT16 before samples are quantized for pydub"
+            ) from soundfile_error
+        _export_explicit_pcm16(segment, target, audio_format, soundfile_error)

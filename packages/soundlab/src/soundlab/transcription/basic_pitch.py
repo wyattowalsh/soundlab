@@ -166,16 +166,11 @@ class MIDITranscriber:
         start_time = time.perf_counter()
 
         if hasattr(inference, "predict"):
-            model_path = getattr(inference, "ICASSP_2022_MODEL_PATH", None)
-            if model_path is None:
-                raise ImportError(
-                    "basic-pitch did not provide ICASSP_2022_MODEL_PATH. "
-                    "predict requires model_or_model_path."
-                )
-            minimum_note_length_ms = self.config.min_note_length * 1000.0
+            model_path = _basic_pitch_model_path(inference)
+            minimum_note_length_ms = self.config.minimum_note_length_ms()
             _model_output, midi_data, note_events = inference.predict(
                 str(source),
-                model_path,
+                model_or_model_path=model_path,
                 onset_threshold=self.config.onset_thresh,
                 frame_threshold=self.config.frame_thresh,
                 minimum_note_length=minimum_note_length_ms,
@@ -185,15 +180,23 @@ class MIDITranscriber:
 
             if midi_data is None:
                 raise RuntimeError(f"basic-pitch did not return MIDI for {source}")
+            # A failed write must surface. Do not substitute another .mid in the directory.
             midi_data.write(str(midi_path))
         elif hasattr(inference, "predict_and_save"):
+            model_path = _basic_pitch_model_path(inference)
+            minimum_note_length_ms = self.config.minimum_note_length_ms()
+            # 0.3.0/0.3.1 require the model path and the save flags with no defaults.
             inference.predict_and_save(
                 [str(source)],
                 str(output),
                 save_midi=True,
+                sonify_midi=False,
+                save_model_outputs=False,
+                save_notes=False,
+                model_or_model_path=model_path,
                 onset_threshold=self.config.onset_thresh,
                 frame_threshold=self.config.frame_thresh,
-                minimum_note_length=self.config.min_note_length,
+                minimum_note_length=minimum_note_length_ms,
                 minimum_frequency=self.config.min_freq,
                 maximum_frequency=self.config.max_freq,
             )

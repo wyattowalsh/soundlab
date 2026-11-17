@@ -241,6 +241,8 @@ class TestLoadAudio:
         assert isinstance(segment, AudioSegment)
         assert segment.sample_rate == 22050
         assert segment.channels == 2
+        assert segment.samples.shape == (2, 22050)
+        assert segment.duration_seconds == pytest.approx(1.0)
 
     def test_load_fallback_to_pydub(self, tmp_path: Path) -> None:
         """load_audio should fallback to pydub on soundfile failure."""
@@ -324,7 +326,7 @@ class TestSaveAudio:
         assert call_args[1]["format"] == "WAV"
 
     def test_save_fallback_to_pydub(self, tmp_path: Path, audio_segment: AudioSegment) -> None:
-        """save_audio should fallback to pydub on soundfile failure."""
+        """Explicit int16 format falls back to pydub after soundfile failure."""
         mp3_path = tmp_path / "output.mp3"
 
         mock_pydub_segment = MagicMock()
@@ -333,9 +335,26 @@ class TestSaveAudio:
             patch("soundlab.io.audio_io.sf.write", side_effect=Exception("soundfile error")),
             patch("soundlab.io.audio_io.PydubAudioSegment", return_value=mock_pydub_segment),
         ):
-            save_audio(audio_segment, mp3_path)
+            save_audio(audio_segment, mp3_path, integer_format=BitDepth.INT16)
 
         mock_pydub_segment.export.assert_called_once_with(mp3_path, format="mp3")
+
+    def test_soundfile_error_propagates_without_integer_format(
+        self, tmp_path: Path, audio_segment: AudioSegment
+    ) -> None:
+        """A soundfile failure stays visible when no integer format was requested."""
+        mp3_path = tmp_path / "output.mp3"
+        soundfile_error = RuntimeError("soundfile error")
+
+        with (
+            patch("soundlab.io.audio_io.sf.write", side_effect=soundfile_error),
+            patch("soundlab.io.audio_io.PydubAudioSegment") as mock_pydub,
+            pytest.raises(RuntimeError, match="soundfile error") as exc_info,
+        ):
+            save_audio(audio_segment, mp3_path)
+
+        assert exc_info.value is soundfile_error
+        mock_pydub.assert_not_called()
 
     def test_save_raises_on_unknown_format(
         self, tmp_path: Path, audio_segment: AudioSegment
@@ -563,7 +582,7 @@ class TestSaveAudioPydubFallback:
                 "soundlab.io.audio_io.PydubAudioSegment", return_value=mock_pydub_segment
             ) as mock_pydub_cls,
         ):
-            save_audio(segment, mp3_path)
+            save_audio(segment, mp3_path, integer_format=BitDepth.INT16)
 
         # Verify pydub was called with correct channel count
         call_kwargs = mock_pydub_cls.call_args[1]
@@ -571,7 +590,7 @@ class TestSaveAudioPydubFallback:
         mock_pydub_segment.export.assert_called_once()
 
     def test_clipping_handled(self, tmp_path: Path) -> None:
-        """Samples clipped to [-1, 1] range."""
+        """Explicit int16 format clips samples into the int16 range."""
         mp3_path = tmp_path / "output.mp3"
 
         # Create segment with out-of-range values
@@ -590,7 +609,7 @@ class TestSaveAudioPydubFallback:
             patch("soundlab.io.audio_io.sf.write", side_effect=Exception("soundfile error")),
             patch("soundlab.io.audio_io.PydubAudioSegment", side_effect=capture_pydub),
         ):
-            save_audio(segment, mp3_path)
+            save_audio(segment, mp3_path, integer_format=BitDepth.INT16)
 
         # Decode the captured int16 data
         int_samples = np.frombuffer(captured_data, dtype=np.int16)
@@ -626,7 +645,7 @@ class TestSaveAudioPydubFallback:
             patch("soundlab.io.audio_io.sf.write", side_effect=Exception("soundfile error")),
             patch("soundlab.io.audio_io.PydubAudioSegment", side_effect=capture_pydub),
         ):
-            save_audio(segment, mp3_path)
+            save_audio(segment, mp3_path, integer_format=BitDepth.INT16)
 
         # Decode the captured int16 data
         int_samples = np.frombuffer(captured_data, dtype=np.int16)
@@ -653,13 +672,13 @@ class TestSaveAudioPydubFallback:
             patch("soundlab.io.audio_io.sf.write", side_effect=Exception("soundfile error")),
             patch("soundlab.io.audio_io.PydubAudioSegment", return_value=mock_pydub_segment),
         ):
-            save_audio(segment, flac_path)
+            save_audio(segment, flac_path, integer_format=BitDepth.INT16)
 
         # Verify export was called with correct format
         mock_pydub_segment.export.assert_called_once_with(flac_path, format="flac")
 
     def test_mp3_export_uses_pydub(self, tmp_path: Path) -> None:
-        """MP3 export uses pydub (soundfile doesn't support mp3)."""
+        """MP3 export uses pydub when the caller requests explicit int16."""
         mp3_path = tmp_path / "output.mp3"
 
         samples = np.random.rand(22050).astype(np.float32)
@@ -671,10 +690,76 @@ class TestSaveAudioPydubFallback:
             patch("soundlab.io.audio_io.sf.write", side_effect=Exception("MP3 not supported")),
             patch("soundlab.io.audio_io.PydubAudioSegment", return_value=mock_pydub_segment),
         ):
-            save_audio(segment, mp3_path)
+            save_audio(segment, mp3_path, integer_format=BitDepth.INT16)
 
         # Verify pydub export was called with mp3 format
         mock_pydub_segment.export.assert_called_once_with(mp3_path, format="mp3")
+
+    def test_out_of_range_samples_are_not_clipped_by_default(self, tmp_path: Path) -> None:
+        """Soundfile failure does not silently clip to int16."""
+        mp3_path = tmp_path / "output.mp3"
+        samples = np.array([2.0, -2.0, 0.5], dtype=np.float32)
+        segment = AudioSegment(samples=samples, sample_rate=22050)
+        soundfile_error = RuntimeError("soundfile error")
+
+        with (
+            patch("soundlab.io.audio_io.sf.write", side_effect=soundfile_error),
+            patch("soundlab.io.audio_io.PydubAudioSegment") as mock_pydub,
+            pytest.raises(RuntimeError, match="soundfile error") as exc_info,
+        ):
+            save_audio(segment, mp3_path)
+
+        assert exc_info.value is soundfile_error
+        mock_pydub.assert_not_called()
+        np.testing.assert_array_equal(segment.samples, samples)
+
+    def test_non_int16_integer_format_does_not_clip(self, tmp_path: Path) -> None:
+        """INT24 does not authorize the int16 pydub clip."""
+        wav_path = tmp_path / "output.wav"
+        segment = AudioSegment(samples=np.array([2.0, -1.5], dtype=np.float32), sample_rate=22050)
+        soundfile_error = RuntimeError("soundfile error")
+
+        with (
+            patch("soundlab.io.audio_io.sf.write", side_effect=soundfile_error),
+            patch("soundlab.io.audio_io.PydubAudioSegment") as mock_pydub,
+            pytest.raises(AudioFormatError, match="INT16") as exc_info,
+        ):
+            save_audio(segment, wav_path, integer_format=BitDepth.INT24)
+
+        assert exc_info.value.__cause__ is soundfile_error
+        mock_pydub.assert_not_called()
+
+    def test_failed_integer_export_chains_soundfile_error(self, tmp_path: Path) -> None:
+        """A failed int16 fallback keeps the soundfile error as its cause."""
+        mp3_path = tmp_path / "output.mp3"
+        segment = AudioSegment(samples=np.zeros(8, dtype=np.float32), sample_rate=22050)
+        soundfile_error = RuntimeError("soundfile error")
+
+        with (
+            patch("soundlab.io.audio_io.sf.write", side_effect=soundfile_error),
+            patch(
+                "soundlab.io.audio_io.PydubAudioSegment",
+                side_effect=RuntimeError("pydub error"),
+            ),
+            pytest.raises(RuntimeError, match="pydub error") as exc_info,
+        ):
+            save_audio(segment, mp3_path, integer_format=BitDepth.INT16)
+
+        assert exc_info.value.__cause__ is soundfile_error
+
+    def test_soundfile_success_preserves_out_of_range_samples(
+        self, tmp_path: Path
+    ) -> None:
+        """A successful soundfile write receives the original samples."""
+        wav_path = tmp_path / "output.wav"
+        samples = np.array([1.5, -1.5], dtype=np.float32)
+        segment = AudioSegment(samples=samples, sample_rate=22050)
+
+        with patch("soundlab.io.audio_io.sf.write") as mock_write:
+            save_audio(segment, wav_path, integer_format=BitDepth.INT16)
+
+        written = mock_write.call_args[0][1]
+        np.testing.assert_array_equal(written, samples)
 
 
 # --------------------------------------------------------------------------- #
@@ -717,6 +802,7 @@ class TestRoundtripIntegration:
 
         assert loaded.sample_rate == original.sample_rate
         assert loaded.channels == original.channels
+        assert loaded.duration_seconds == pytest.approx(stereo_samples.shape[-1] / 22050)
 
     def test_mono_stereo_handling(
         self, mono_samples: np.ndarray, stereo_samples: np.ndarray
@@ -729,3 +815,4 @@ class TestRoundtripIntegration:
         # Test stereo
         stereo_segment = AudioSegment(samples=stereo_samples, sample_rate=22050)
         assert stereo_segment.channels == 2
+        assert stereo_segment.duration_seconds == pytest.approx(stereo_samples.shape[-1] / 22050)

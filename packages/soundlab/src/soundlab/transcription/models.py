@@ -15,9 +15,20 @@ class TranscriptionConfig(BaseModel):
 
     onset_thresh: Annotated[float, Field(ge=0.1, le=0.9)] = 0.5
     frame_thresh: Annotated[float, Field(ge=0.1, le=0.9)] = 0.3
+    # Seconds. basic-pitch 0.3 expects milliseconds; see minimum_note_length_ms().
     min_note_length: Annotated[float, Field(ge=0.01, le=0.2)] = 0.058
     min_freq: Annotated[float, Field(ge=20.0, le=500.0)] = 32.7
     max_freq: Annotated[float, Field(ge=1000.0, le=8000.0)] = 2093.0
+
+    def minimum_note_length_ms(self) -> float:
+        """Return ``min_note_length`` in milliseconds.
+
+        basic-pitch 0.3.0 and 0.3.1 ``predict`` take ``minimum_note_length`` in
+        milliseconds and divide by 1000 before converting to frames
+        (``AUDIO_SAMPLE_RATE / FFT_HOP``, 22050/256). The config value 0.058 is
+        58 ms. Passing 0.058 unchanged rounds that note to 0 frames.
+        """
+        return self.min_note_length * 1000.0
 
 
 class DrumTranscriptionConfig(BaseModel):
