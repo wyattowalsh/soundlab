@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `soundlab effects` can apply an explicit `--gain-db` and `--highpass-hz`. With neither option, it copies the audio.
 - CREPE uses `onset_thresh` as the onset delta and `frame_thresh` as the confidence gate. `DrumTranscriptionConfig` reaches the drum transcriber, including its pitches and velocity scale.
 - Key detection on silence or an undefined correlation returns a confidence inside 0–1 instead of failing validation. A Basic Pitch MIDI file that exists but cannot be read raises that read error.
+- Stem files follow `SeparationConfig.output_format`. WAV can stay float. FLAC and MP3 reject a float32 request, and MP3 uses `mp3_bitrate`. The studio separation cell no longer passes `mp3_bitrate=None` for WAV.
 
 ### Changed
 

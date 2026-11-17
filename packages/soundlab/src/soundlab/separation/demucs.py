@@ -20,7 +20,7 @@ from soundlab.separation.models import (
     SeparationConfig,
     StemResult,
     output_stem_names,
-    stem_audio_subtype,
+    write_stem_audio,
 )
 from soundlab.utils.gpu import get_device, get_free_vram_gb
 
@@ -144,7 +144,7 @@ class StemSeparator:
 
         stems: dict[str, Path] = {}
         for i, stem_name in enumerate(stem_names):
-            stem_path = output_dir / f"{stem_name}.wav"
+            stem_path = output_dir / f"{stem_name}.{self.config.output_format}"
             self._save_stem(sources[i], stem_path)
             stems[stem_name] = stem_path
             logger.debug(f"Saved: {stem_path}")
@@ -160,13 +160,18 @@ class StemSeparator:
         )
 
     def _save_stem(self, tensor: torch.Tensor, path: Path) -> None:
-        """Save a stem tensor to file."""
-        import soundfile as sf
-
+        """Save a stem tensor to the configured container."""
         audio = tensor.cpu().numpy()
         if audio.ndim == 2:
             audio = audio.T
 
-        subtype = stem_audio_subtype(float32=self.config.float32, int24=self.config.int24)
         samplerate = self._model.samplerate if self._model is not None else 44100
-        sf.write(path, audio, samplerate, subtype=subtype)
+        write_stem_audio(
+            audio,
+            path,
+            sample_rate=samplerate,
+            output_format=self.config.output_format,
+            float32=self.config.float32,
+            int24=self.config.int24,
+            mp3_bitrate=self.config.mp3_bitrate,
+        )

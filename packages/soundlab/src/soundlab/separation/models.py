@@ -4,13 +4,14 @@ from __future__ import annotations
 
 from enum import StrEnum
 from pathlib import Path  # noqa: TC003
-from typing import Annotated
+from typing import Annotated, Literal
 
 import numpy as np
 import soundfile as sf
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
+from pydub import AudioSegment as PydubAudioSegment
 
-from soundlab.core.exceptions import ProcessingError
+from soundlab.core.exceptions import ConfigurationError, ProcessingError
 
 
 class DemucsModel(StrEnum):
@@ -37,6 +38,58 @@ class DemucsModel(StrEnum):
         if self == DemucsModel.HTDEMUCS_6S:
             return [*base, "piano", "guitar"]
         return base
+
+
+StemFormat = Literal["wav", "flac", "mp3"]
+
+
+def write_stem_audio(
+    samples: np.ndarray,
+    path: Path,
+    *,
+    sample_rate: int,
+    output_format: StemFormat = "wav",
+    float32: bool = False,
+    int24: bool = True,
+    mp3_bitrate: int = 320,
+) -> Path:
+    """Write one stem and return the path that was written.
+
+    ``samples`` are mono ``(frames,)`` or channels-last ``(frames, channels)``.
+    ``float32`` selects a float WAV. FLAC and MP3 store integer samples, so a
+    float32 request with either format raises ``ConfigurationError``. MP3 is
+    encoded at ``mp3_bitrate`` kilobits per second.
+    """
+    target = path.with_suffix(f".{output_format}")
+    if output_format == "wav":
+        subtype = stem_audio_subtype(float32=float32, int24=int24)
+        sf.write(target, samples, sample_rate, format="WAV", subtype=subtype)
+        return target
+    if float32:
+        raise ConfigurationError(
+            f"{output_format} cannot store float32 samples. Choose wav to keep the float stem."
+        )
+    if output_format == "flac":
+        subtype = "PCM_24" if int24 else "PCM_16"
+        sf.write(target, samples, sample_rate, format="FLAC", subtype=subtype)
+        return target
+    if output_format == "mp3":
+        _write_mp3(samples, target, sample_rate, mp3_bitrate)
+        return target
+    raise ConfigurationError(f"Unsupported stem format: {output_format}")
+
+
+def _write_mp3(samples: np.ndarray, target: Path, sample_rate: int, bitrate: int) -> None:
+    clipped = np.clip(np.asarray(samples, dtype=np.float64), -1.0, 1.0)
+    pcm = np.ascontiguousarray((clipped * 32767.0).astype(np.int16))
+    channels = 1 if pcm.ndim == 1 else int(pcm.shape[1])
+    segment = PydubAudioSegment(
+        data=pcm.tobytes(),
+        sample_width=2,
+        frame_rate=sample_rate,
+        channels=channels,
+    )
+    segment.export(target, format="mp3", bitrate=f"{int(bitrate)}k")
 
 
 def stem_audio_subtype(*, float32: bool, int24: bool) -> str:
@@ -85,6 +138,7 @@ class SeparationConfig(BaseModel):
     float32: bool = False
     int24: bool = True
     mp3_bitrate: Annotated[int, Field(ge=128, le=320)] = 320
+    output_format: StemFormat = "wav"
 
     device: str = "auto"
     split: bool = True

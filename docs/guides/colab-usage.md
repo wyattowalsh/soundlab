@@ -113,7 +113,7 @@ float32_output = True
 | `mdx_extra` | 4 |
 | `mdx_extra_q` | 4 |
 
-`two_stems = "none"` separates the full stem set. Any other value keeps that stem and a complement.
+`two_stems = "none"` separates the full stem set. Any other value keeps that stem and a complement. `output_format` chooses the stem container. `wav` can stay float when `float32_output` is on. `flac` and `mp3` are integer files, so leave `float32_output` off for those. `mp3_bitrate` is the MP3 rate in kilobits per second.
 
 ### Candidate selection
 
